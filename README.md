@@ -3,9 +3,10 @@
 ## Project Setup
 
 * Clone this repo
+* Create virtual environment (recommended)
 * Install requirements `pip install -r requirements.txt`
 * Create `.env` file and enter info (use [env.example](env.example) for reference)
-* Set up the following CRON job: `0 14 * * * python path/to/run.py`
+* Set up the following CRON job: `0 14 * * * path/to/venv/python path/to/run.py`
 
 
 ## Project Flow
