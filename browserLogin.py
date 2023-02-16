@@ -11,6 +11,8 @@ load_dotenv()
 
 
 def browserLogin():
+    # This is needed if executing file from outside of project root directory
+    dir = os.path.dirname(__file__)
 
     fireFoxOptions = webdriver.FirefoxOptions()
     fireFoxOptions.headless = True
@@ -32,9 +34,9 @@ def browserLogin():
 
 
     # Update database with current date of login
-    with open('pastData.json') as f:
+    with open(f'{dir}/pastData.json') as f:
         pastData = json.load(f)
         pastData['lastBrowserLogin'] = str(date.today())
 
-    with open('pastData.json', 'w') as f:
+    with open(f'{dir}/pastData.json', 'w') as f:
         json.dump(pastData, f, indent=2)

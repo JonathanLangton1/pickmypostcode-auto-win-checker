@@ -10,14 +10,16 @@ import os
 load_dotenv()
 
 def main():
+    # This is needed if executing file from outside of project root directory
+    dir = os.path.dirname(__file__)
 
     # If database file doesn't exist, create one
-    if os.path.isfile('pastData.json') == False:
-        with open("pastData.json", "w") as f:
+    if os.path.isfile(f'{dir}/pastData.json') == False:
+        with open(f'{dir}/pastData.json', 'w') as f:
             f.write("{}")
 
     # If user hasn't logged in for past 6 days, then log in using Selenium
-    with open('pastData.json') as f:
+    with open(f'{dir}/pastData.json') as f:
         pastData = json.load(f)
         if 'lastBrowserLogin' in pastData.keys():
             lastBrowserLogin = datetime.strptime(pastData['lastBrowserLogin'], '%Y-%m-%d').date()
@@ -46,7 +48,7 @@ def main():
     # If day is Sunday, send report of weekly data & also delete logs
     if date.today().weekday() == 6:
         print('Sending data summary')
-        with open('pastData.json') as f:
+        with open(f'{dir}/pastData.json') as f:
             weeklyData = json.load(f)
         f.close()
         sendEmail(os.environ.get("NOTIFICATION_EMAIL_ADDRESS"), 'Weekly postcode lottery data summary 📊', f'Hey 👋,\n\n {weeklyData} \n\nThanks,\nRobot')

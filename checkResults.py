@@ -1,9 +1,12 @@
 from datetime import datetime, date
 import requests
 import json
+import os
 
 
 def checkResults(YOUR_POSTCODE):
+    # This is needed if executing file from outside of project root directory
+    dir = os.path.dirname(__file__)
 
     response = requests.get('https://pickmypostcode.com/api/index.php/entry/').json()
 
@@ -59,7 +62,7 @@ def checkResults(YOUR_POSTCODE):
 
 
     # Update database with current results & remove data older than 10 days
-    with open('pastData.json') as f:
+    with open(f'{dir}/pastData.json') as f:
         pastData = json.load(f)
         pastData[str(date.today())] = results
 
@@ -71,7 +74,7 @@ def checkResults(YOUR_POSTCODE):
         for key in dataToDelete:
             del pastData[key]
 
-    with open('pastData.json', 'w') as f:
+    with open(f'{dir}/pastData.json', 'w') as f:
         json.dump(pastData, f, indent=2)
 
     return results
