@@ -18,17 +18,9 @@ def main():
         with open(f'{dir}/pastData.json', 'w') as f:
             f.write("{}")
 
-    # If user hasn't logged in for past 6 days, then log in using Selenium
-    with open(f'{dir}/pastData.json') as f:
-        pastData = json.load(f)
-        if 'lastBrowserLogin' in pastData.keys():
-            lastBrowserLogin = datetime.strptime(pastData['lastBrowserLogin'], '%Y-%m-%d').date()
-            delta = date.today() - lastBrowserLogin
-            if delta.days >= 6:
-                browserLogin()
-        else:
-            browserLogin()
 
+    # Sign in using Selenium
+    browserLogin()
 
 
     # Get results
