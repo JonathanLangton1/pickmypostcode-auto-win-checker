@@ -30,6 +30,10 @@ def browserLogin():
     driver.find_element(By.XPATH, '//*[@id="confirm-ticket"]').send_keys(os.environ.get("YOUR_POSTCODE"))
     driver.find_element(By.XPATH, '//*[@id="confirm-email"]').send_keys(os.environ.get("PMP_EMAIL"))
     driver.find_element(By.XPATH, '/html/body/div[2]/div[2]/div[2]/main/div[1]/section/div/div/div/form/button').click()
+    
+    # Load other draw pages to claim bonus
+    driver.get("https://pickmypostcode.com/video/")
+    driver.get("https://pickmypostcode.com/survey-draw/")
     driver.close()
 
 
