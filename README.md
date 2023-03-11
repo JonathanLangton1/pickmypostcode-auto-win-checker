@@ -10,7 +10,7 @@
 
 
 ## Project Flow
-1. Check if user hasn't logged in for 1 week. If not, sign in using Selenium ([here's why](https://pickmypostcode.com/rules/#:~:text=We%20may%20temporarily%20remove%20entries%20that%20have%20not%20visited%20the%20site%20for%20over%20a%20week.))
+1. Sign in using Selenium ([here's why](https://pickmypostcode.com/rules/#:~:text=We%20may%20temporarily%20remove%20entries%20that%20have%20not%20visited%20the%20site%20for%20over%20a%20week.)) each day & visit draw pages to claim bonuses.
 2. Check if user has won by requesting results directly from their API
 3. If user has won, send email detailing which draw(s) have been won
 4. If user hasn't won, if it is a Sunday, send summary email with data, otherwise do nothing
