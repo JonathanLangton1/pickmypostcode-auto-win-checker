@@ -13,8 +13,8 @@ def main():
         dir = os.path.dirname(__file__)
 
         # If database file doesn't exist, create one
-        if not os.path.isfile(f'{dir}/pastData.json'):
-            with open(f'{dir}/pastData.json', 'w') as f:
+        if not os.path.isfile(f'{dir}/logs/pastData.json'):
+            with open(f'{dir}/logs/pastData.json', 'w') as f:
                 f.write("{}")
 
         # Sign in using Selenium
@@ -40,7 +40,7 @@ def main():
         if date.today().weekday() == 6:
             summary = summariseWeeklyResults(os.environ.get("YOUR_POSTCODE"))
             print('Sending data summary')
-            with open(f'{dir}/pastData.json') as f:
+            with open(f'{dir}/logs/pastData.json') as f:
                 weeklyData = json.load(f)
             
             sendEmail(

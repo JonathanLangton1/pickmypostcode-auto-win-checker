@@ -80,11 +80,11 @@ def browserLogin():
         driver.quit()
 
     # Update database with the current date of login
-    with open(f'{dir}/pastData.json') as f:
+    with open(f'{dir}/logs/pastData.json') as f:
         pastData = json.load(f)
         pastData['lastBrowserLogin'] = str(date.today())
 
-    with open(f'{dir}/pastData.json', 'w') as f:
+    with open(f'{dir}/logs/pastData.json', 'w') as f:
         json.dump(pastData, f, indent=2)
 
 if __name__ == "__main__":

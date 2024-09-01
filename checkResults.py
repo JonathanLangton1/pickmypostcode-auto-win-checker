@@ -62,7 +62,7 @@ def checkResults(YOUR_POSTCODE):
 
 
     # Update database with current results & remove data older than 10 days
-    with open(f'{dir}/pastData.json') as f:
+    with open(f'{dir}/logs/pastData.json') as f:
         pastData = json.load(f)
         pastData[str(date.today())] = results
 
@@ -74,7 +74,7 @@ def checkResults(YOUR_POSTCODE):
         for key in dataToDelete:
             del pastData[key]
 
-    with open(f'{dir}/pastData.json', 'w') as f:
+    with open(f'{dir}/logs/pastData.json', 'w') as f:
         json.dump(pastData, f, indent=2)
 
     return results

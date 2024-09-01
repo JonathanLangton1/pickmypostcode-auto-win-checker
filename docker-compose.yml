@@ -21,7 +21,7 @@ services:
       - NOTIFICATION_EMAIL_ADDRESS=
     volumes:
     # Persist past checks log file
-      - ./pastData.json:/app/pastData.json
+      - ./pickmypostcode_logs:/app/logs
     depends_on:
       - selenium-chrome
     working_dir: /app
