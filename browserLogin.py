@@ -44,11 +44,11 @@ def browserLogin():
         print("Waiting for the element to be present...")
         
         # First, wait for the presence of the element
-        element = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]")))
+        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]")))
         print("Element is present.")
         
         # Now, wait for it to be clickable
-        clickable_element = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]")))
+        wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]")))
         print("Element found and clickable.")
 
 
@@ -66,7 +66,15 @@ def browserLogin():
 
         print("Requesting Survey Draw Page")
         driver.get("https://pickmypostcode.com/survey-draw/")
-        time.sleep(1)
+        time.sleep(0.5)
+
+        print("Requesting Stackpot Draw Page")
+        driver.get("https://pickmypostcode.com/stackpot/")
+        time.sleep(0.5)
+
+        print("Requesting Bonus Draw Draw Page")
+        driver.get("https://pickmypostcode.com/your-bonus/")
+        time.sleep(0.5)
         driver.close()
 
     except Exception as e:
