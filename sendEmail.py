@@ -20,7 +20,7 @@ def sendEmail(to, subject, message, html_message, attachment_path=None):
         # create email
         msg = EmailMessage()
         msg['Subject'] = subject
-        msg['From'] = email_address
+        msg['From'] = f'Postcode Lottery Bot <{email_address}>'
         msg['To'] = to
         msg.set_content(message)
         msg.add_alternative(html_message, subtype='html')
