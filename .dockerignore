@@ -24,7 +24,6 @@ docker-compose.yml
 
 # Ignore IDE/editor specific files
 .vscode/
-.idea/
 *.swp
 *.swo
 
