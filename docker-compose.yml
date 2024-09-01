@@ -13,7 +13,7 @@ services:
       # Pickmypostcode login details
       - YOUR_POSTCODE=
       - PMP_EMAIL=
-      # Gmail SMTP account used to send emails from
+      # Gmail SMTP account used to send emails from (https://knowledge.workspace.google.com/kb/how-to-create-app-passwords-000009237)
       - EMAIL_ADDRESS=
       - EMAIL_PASSWORD=
       # This email will receive notifications if you have won
