@@ -4,9 +4,10 @@ services:
     container_name: selenium-chrome
     ports:
       - "4444:4444"
+    restart: always
 
   pickmypostcode-checker:
-    build: .
+    image: jonathanlangton1/pickmypostcode-auto-win-checker:main
     container_name: pickmypostcode-checker
     environment:
       - SELENIUM_URL=http://selenium-chrome:4444/wd/hub
@@ -19,7 +20,8 @@ services:
       # This email will receive notifications if you have won
       - NOTIFICATION_EMAIL_ADDRESS=
     volumes:
-      - .:/app
+    # Persist past checks log file
+      - ./pastData.json:/app/pastData.json
     depends_on:
       - selenium-chrome
     working_dir: /app
