@@ -1,13 +1,12 @@
-from email.message import EmailMessage
-from dotenv import load_dotenv
 import smtplib
+from email.message import EmailMessage
+from email.mime.base import MIMEBase
+from email import encoders
 import os
+import mimetypes
 
 
-load_dotenv()
-
-
-def sendEmail(to, subject, message):
+def sendEmail(to, subject, message, html_message, attachment_path=None):
     try:
         email_address = os.environ.get("EMAIL_ADDRESS")
         email_password = os.environ.get("EMAIL_PASSWORD")
@@ -24,6 +23,16 @@ def sendEmail(to, subject, message):
         msg['From'] = email_address
         msg['To'] = to
         msg.set_content(message)
+        msg.add_alternative(html_message, subtype='html')
+
+        # Attach the file if it exists
+        if attachment_path and os.path.isfile(attachment_path):
+            with open(attachment_path, 'rb') as f:
+                file_data = f.read()
+                file_name = os.path.basename(attachment_path)
+                mime_type, _ = mimetypes.guess_type(attachment_path)
+                mime_type, mime_subtype = mime_type.split('/', 1)
+                msg.add_attachment(file_data, maintype=mime_type, subtype=mime_subtype, filename=file_name)
 
         # send email
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:

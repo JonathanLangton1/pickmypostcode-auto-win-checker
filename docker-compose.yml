@@ -1,0 +1,27 @@
+services:
+  selenium-chrome:
+    image: selenium/standalone-chrome
+    container_name: selenium-chrome
+    ports:
+      - "4444:4444"
+
+  pickmypostcode-checker:
+    build: .
+    container_name: pickmypostcode-checker
+    environment:
+      - SELENIUM_URL=http://selenium-chrome:4444/wd/hub
+      # Pickmypostcode login details
+      - YOUR_POSTCODE=
+      - PMP_EMAIL=
+      # Gmail SMTP account used to send emails from
+      - EMAIL_ADDRESS=
+      - EMAIL_PASSWORD=
+      # This email will receive notifications if you have won
+      - NOTIFICATION_EMAIL_ADDRESS=
+    volumes:
+      - .:/app
+    depends_on:
+      - selenium-chrome
+    working_dir: /app
+    command: cron -f
+    restart: on-failure:3
