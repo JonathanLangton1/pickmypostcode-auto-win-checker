@@ -1,16 +1,19 @@
 # Pickmypostcode Auto Win Checker
 
-## Project Setup
+- Automates the login process to the Pick My Postcode website using Selenium.
+- Checks lottery results based on the user's postcode set in `docker-compose.yml`.
+- Sends email notifications for wins and weekly summaries.
+- Runs on a daily schedule using Docker and Docker Compose (every day at 2pm)
 
-* Clone this repo
-* Create virtual environment (recommended)
-* Install requirements `pip install -r requirements.txt`
-* Create `.env` file and enter info (use [env.example](env.example) for reference)
-* Set up the following CRON job: `0 14 * * * path/to/venv/python path/to/run.py`
+## Requirements
 
+- Docker
+- Docker Compose
 
-## Project Flow
-1. Sign in using Selenium ([here's why](https://pickmypostcode.com/rules/#:~:text=We%20may%20temporarily%20remove%20entries%20that%20have%20not%20visited%20the%20site%20for%20over%20a%20week.)) each day & visit draw pages to claim bonuses.
-2. Check if user has won by requesting results directly from their API
-3. If user has won, send email detailing which draw(s) have been won
-4. If user hasn't won, if it is a Sunday, send summary email with data, otherwise do nothing
+## Quick Start
+
+* Clone this repo `git clone https://github.com/JonathanLangton1/pickmypostcode-auto-win-checker`
+* Navigate to the project directory `cd pickmypostcode-auto-win-checker`
+* Set up environment variables listed in the `docker-compose.yml` file
+* Build and run the application `docker-compose up --build`
+* The checker will now automatically run every day at 2pm. If you wish to manually run it at any point for testing, you can do so by executing the following command: `docker exec pickmypostcode-checker python run.py`
