@@ -12,8 +12,7 @@
 
 ## Quick Start
 
-* Clone this repo `git clone https://github.com/JonathanLangton1/pickmypostcode-auto-win-checker`
-* Navigate to the project directory `cd pickmypostcode-auto-win-checker`
-* Set up environment variables listed in the `docker-compose.yml` file
-* Build and run the application `docker-compose up --build`
+* Copy [docker-compose.yml](./docker-compose.yml)
+* Set environment variables listed inside
+* Build and run the application `docker-compose up`
 * The checker will now automatically run every day at 2pm. If you wish to manually run it at any point for testing, you can do so by executing the following command: `docker exec pickmypostcode-checker python run.py`
