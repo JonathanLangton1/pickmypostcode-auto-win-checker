@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y cron
 
 # Add the cron job to the crontab (optional, only if needed for automated runs)
 # Example cron job to run your script at 14:00 every day
-RUN echo "0 14 * * * /usr/local/bin/python /app/run.py >> /var/log/cron.log 2>&1" >> /etc/cron.d/mycron
+RUN echo "0 14 * * * /usr/local/bin/python /app/run.py" >> /etc/cron.d/mycron
 
 # Give execution rights on the cron job
 RUN chmod 0644 /etc/cron.d/mycron
