@@ -17,7 +17,8 @@ def browserLogin():
 
     # Set Chrome options to run in headless mode
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    if os.getenv("HEADLESS", "true").lower() != "false":
+        chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1920,1080")
@@ -44,20 +45,24 @@ def browserLogin():
         print("Waiting for the element to be present...")
         
         # First, wait for the presence of the element
-        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]")))
+        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[1]/div/div/div[4]/div[2]/div/nav/button")))
         print("Element is present.")
         
         # Now, wait for it to be clickable
-        wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]")))
+        wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[1]/div/div/div[4]/div[2]/div/nav/button")))
         print("Element found and clickable.")
 
 
         # Sign in
         print('Signing in')
-        driver.find_element(By.XPATH, "/html/body/div[2]/div[2]/div[2]/nav/ul/li[5]/button[2]").click()
-        driver.find_element(By.XPATH, '//*[@id="confirm-ticket"]').send_keys(os.environ.get("YOUR_POSTCODE"))
-        driver.find_element(By.XPATH, '//*[@id="confirm-email"]').send_keys(os.environ.get("PMP_EMAIL"))
-        driver.find_element(By.XPATH, '/html/body/div[2]/div[2]/div[2]/main/div[1]/section/div/div/div/form/button').click()
+        driver.find_element(By.XPATH, "/html/body/div[1]/div[1]/div/div/div[4]/div[2]/div/nav/button").click()
+
+        # Scope all lookups to the sign-in modal's form so we never hit the hidden mobile/desktop duplicate
+        modal_form = "//form[.//h3[normalize-space()='Sign into your account']]"
+        postcode_input = wait.until(EC.element_to_be_clickable((By.XPATH, f"{modal_form}//input[@id='postcode']")))
+        postcode_input.send_keys(os.environ.get("YOUR_POSTCODE"))
+        driver.find_element(By.XPATH, f"{modal_form}//input[@id='email']").send_keys(os.environ.get("PMP_EMAIL"))
+        driver.find_element(By.XPATH, f"{modal_form}//button[@type='submit']").click()
     
         # Load other draw pages to claim bonus
         print("Requesting Video Draw Page")
@@ -79,7 +84,7 @@ def browserLogin():
 
     except Exception as e:
         print(f"An error occurred: {e}")
-        driver.save_screenshot('error_screenshot.png')
+        driver.save_screenshot(f'{dir}/logs/error_screenshot.png')
         raise e
 
     finally:

@@ -67,10 +67,11 @@ def checkResults(YOUR_POSTCODE):
         pastData[str(date.today())] = results
 
         dataToDelete = []
-        for index, dateStr in enumerate(pastData.keys()):
-            if index != 0:
-                if (date.today() - datetime.strptime(dateStr, '%Y-%m-%d').date()).days >= 10:
-                    dataToDelete.append(dateStr)
+        for key in pastData.keys():
+            if key == "lastBrowserLogin":
+                continue
+            if (date.today() - datetime.strptime(key, '%Y-%m-%d').date()).days >= 10:
+                dataToDelete.append(key)
         for key in dataToDelete:
             del pastData[key]
 

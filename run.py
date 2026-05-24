@@ -5,7 +5,28 @@ from datetime import datetime, date
 from sendEmail import sendEmail
 import json
 import os
+import sys
 import traceback
+
+
+def sendStartupTestEmail():
+    """Send a one-shot confirmation email so the user can verify config is correct."""
+    to = os.environ.get("NOTIFICATION_EMAIL_ADDRESS")
+    subject = "Pick My Postcode auto checker is ready ✅"
+    body = (
+        "Hey 👋,\n\n"
+        "Your Pick My Postcode auto win checker is set up correctly.\n"
+        "It will run every day at 2pm and email you when your postcode wins "
+        "(plus a summary every Sunday).\n\n"
+        "Thanks,\nRobot"
+    )
+    html = f"<p>{body.replace(chr(10), '<br>')}</p>"
+    ok = sendEmail(to, subject, body, html)
+    if ok:
+        print(f"Test email sent to {to}.")
+    else:
+        print("Failed to send test email — check EMAIL_ADDRESS / EMAIL_PASSWORD in .env")
+        sys.exit(1)
 
 def main():
     try:
@@ -25,15 +46,23 @@ def main():
 
         # If won, send email containing which draw you have won & a link to claim
         if results['hasWon']:
-            winningDraws = []
-            for drawName, data in results['drawResults'].items():
-                if data['hasWon']:
-                    print('Sending winning email')
-                    winningDraws.append(drawName)
+            winningDraws = [name for name, data in results['drawResults'].items() if data['hasWon']]
+            print('Sending winning email')
+            win_text = (
+                f"Hey 👋,\n\nYou have won the following draw(s): {', '.join(winningDraws)}.\n"
+                "Claim it here: https://pickmypostcode.com/\n\nThanks,\nRobot"
+            )
+            win_html = (
+                f"<p>Hey 👋,</p><p>You have won the following draw(s): "
+                f"<strong>{', '.join(winningDraws)}</strong>.</p>"
+                f"<p>Claim it here: <a href=\"https://pickmypostcode.com/\">pickmypostcode.com</a></p>"
+                f"<p>Thanks,<br>Robot</p>"
+            )
             sendEmail(
                 os.environ.get("NOTIFICATION_EMAIL_ADDRESS"),
                 'You have won the postcode lottery 🎉',
-                f'Hey 👋,\n\nYou have won the following draw(s): {winningDraws}.\nClaim it here: https://pickmypostcode.com/\n\nThanks,\nRobot'
+                win_text,
+                win_html,
             )
 
         # If day is Sunday, send report of weekly data & also delete logs
@@ -57,7 +86,7 @@ def main():
 
         # Attempt to send an error notification email
         try:
-            screenshot_path = 'error_screenshot.png'
+            screenshot_path = f'{dir}/logs/error_screenshot.png'
             sendEmail(
                 os.environ.get("NOTIFICATION_EMAIL_ADDRESS"),
                 'Script Error Notification 🚨',
@@ -76,4 +105,7 @@ def main():
             print("Failed to send error notification email: ", email_error)
 
 if __name__ == '__main__':
-    main()
+    if "--test" in sys.argv:
+        sendStartupTestEmail()
+    else:
+        main()

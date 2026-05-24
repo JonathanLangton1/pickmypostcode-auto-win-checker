@@ -1,26 +1,20 @@
 services:
   selenium-chrome:
-    image: selenium/standalone-chrome
+    image: selenium/standalone-chromium
     container_name: selenium-chrome
     ports:
       - "4444:4444"
+    shm_size: "2gb"
     restart: always
 
   pickmypostcode-checker:
-    image: jonathanlangton1/pickmypostcode-auto-win-checker:main
+    build: .
+    image: pickmypostcode-auto-win-checker:latest
     container_name: pickmypostcode-checker
+    env_file: .env
     environment:
       - SELENIUM_URL=http://selenium-chrome:4444/wd/hub
-      # Pickmypostcode login details
-      - YOUR_POSTCODE=
-      - PMP_EMAIL=
-      # Gmail SMTP account used to send emails from (https://knowledge.workspace.google.com/kb/how-to-create-app-passwords-000009237)
-      - EMAIL_ADDRESS=
-      - EMAIL_PASSWORD=
-      # This email will receive notifications if you have won
-      - NOTIFICATION_EMAIL_ADDRESS=
     volumes:
-    # Persist past checks log file
       - ./pickmypostcode_logs:/app/logs
     depends_on:
       - selenium-chrome
