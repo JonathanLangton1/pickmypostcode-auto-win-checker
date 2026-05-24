@@ -19,5 +19,4 @@ services:
     depends_on:
       - selenium-chrome
     working_dir: /app
-    command: cron -f
     restart: on-failure:3
