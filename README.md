@@ -33,6 +33,14 @@ docker exec pickmypostcode-checker python run.py --test
 
 Within a few seconds you'll get a "Pick My Postcode auto checker is ready ✅" email at your `NOTIFICATION_EMAIL_ADDRESS`. If you don't, your Gmail SMTP credentials are wrong.
 
+**Want to see the whole thing run end-to-end?** Trigger a real run instead of waiting for 2pm:
+
+```bash
+docker exec pickmypostcode-checker python run.py
+```
+
+This signs in, checks every draw, saves results to `logs/pastData.json`, and if it's Sunday emails you the weekly summary. Tail it live with `docker logs -f pickmypostcode-checker`.
+
 That's it. From now on, the bot runs daily at 14:00 UK time and only emails you when you win (plus a summary every Sunday).
 
 ## Useful commands
