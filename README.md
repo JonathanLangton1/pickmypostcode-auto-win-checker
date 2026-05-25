@@ -1,5 +1,9 @@
 # Pick My Postcode Auto Win Checker
 
+[![Build](https://github.com/JonathanLangton1/pickmypostcode-auto-win-checker/actions/workflows/dockerpush.yml/badge.svg?branch=main)](https://github.com/JonathanLangton1/pickmypostcode-auto-win-checker/actions/workflows/dockerpush.yml)
+[![Last commit](https://img.shields.io/github/last-commit/JonathanLangton1/pickmypostcode-auto-win-checker?label=updated)](https://github.com/JonathanLangton1/pickmypostcode-auto-win-checker/commits/main)
+[![Docker image](https://img.shields.io/docker/v/jonathanlangton1/pickmypostcode-auto-win-checker/latest?label=docker%20image&logo=docker)](https://hub.docker.com/r/jonathanlangton1/pickmypostcode-auto-win-checker)
+
 Automatically signs into [pickmypostcode.com](https://pickmypostcode.com/) every day at 2pm and emails you when your postcode wins.
 
 Works on any Docker host - Linux server (x86 or ARM), Raspberry Pi, or Mac (Intel or Apple Silicon).
@@ -25,21 +29,20 @@ nano .env
 docker compose up -d
 ```
 
-**Confirm it works** — fire off a test email:
+**Confirm it works** — run the full health check:
 
 ```bash
-docker exec pickmypostcode-checker python run.py --test
+docker exec -t pickmypostcode-checker python run.py --test
 ```
 
-Within a few seconds you'll get a "Pick My Postcode auto checker is ready ✅" email at your `NOTIFICATION_EMAIL_ADDRESS`. If you don't, your Gmail SMTP credentials are wrong.
+This runs the entire pipeline and prints a coloured health-check report:
 
-**Want to see the whole thing run end-to-end?** Trigger a real run instead of waiting for 2pm:
+- ✓ Selenium grid reachable
+- ✓ Browser flow (sign-in + draw page visits)
+- ✓ Results API fetch
+- ✓ Summary email delivered
 
-```bash
-docker exec pickmypostcode-checker python run.py
-```
-
-This signs in, checks every draw, saves results to `logs/pastData.json`, and if it's Sunday emails you the weekly summary. Tail it live with `docker logs -f pickmypostcode-checker`.
+…then shows today's winning postcodes in a table and tells you whether your postcode won. A nicely formatted summary email also lands in your inbox. If anything is misconfigured, the failing check is highlighted in red and the command exits non-zero.
 
 That's it. From now on, the bot runs daily at 14:00 UK time and only emails you when you win (plus a summary every Sunday).
 
