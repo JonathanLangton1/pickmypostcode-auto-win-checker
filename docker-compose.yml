@@ -8,8 +8,7 @@ services:
     restart: always
 
   pickmypostcode-checker:
-    build: .
-    image: pickmypostcode-auto-win-checker:latest
+    image: jonathanlangton1/pickmypostcode-auto-win-checker:main
     container_name: pickmypostcode-checker
     env_file: .env
     environment:

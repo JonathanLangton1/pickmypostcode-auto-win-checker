@@ -2,6 +2,8 @@
 
 Automatically signs into [pickmypostcode.com](https://pickmypostcode.com/) every day at 2pm and emails you when your postcode wins.
 
+Runs on `amd64` and `arm64` (Raspberry Pi, Apple Silicon).
+
 ## Requirements
 
 - [Docker](https://docs.docker.com/get-docker/)
@@ -9,26 +11,36 @@ Automatically signs into [pickmypostcode.com](https://pickmypostcode.com/) every
 
 ## Quick start
 
-1. Clone this repo and `cd` into it.
-2. Copy the example env file and fill in your values:
-   ```bash
-   cp env.example .env
-   ```
-3. Start the checker:
-   ```bash
-   docker compose up -d --build
-   ```
-4. **Confirm it works** — fire off a test email:
-   ```bash
-   docker exec pickmypostcode-checker python run.py --test
-   ```
-   Within a few seconds you'll get a "Pick My Postcode auto checker is ready ✅" email at your `NOTIFICATION_EMAIL_ADDRESS`. If you don't, your Gmail SMTP credentials are wrong.
+Drop two files in an empty folder on your server, fill in your `.env`, and go:
 
-That's it. From now on, the bot runs daily at 14:00 and only emails you when you win (plus a summary every Sunday).
+```bash
+mkdir pickmypostcode && cd pickmypostcode
+
+curl -O https://raw.githubusercontent.com/JonathanLangton1/pickmypostcode-auto-win-checker/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/JonathanLangton1/pickmypostcode-auto-win-checker/main/env.example
+
+# edit .env with your details
+nano .env
+
+docker compose up -d
+```
+
+**Confirm it works** — fire off a test email:
+
+```bash
+docker exec pickmypostcode-checker python run.py --test
+```
+
+Within a few seconds you'll get a "Pick My Postcode auto checker is ready ✅" email at your `NOTIFICATION_EMAIL_ADDRESS`. If you don't, your Gmail SMTP credentials are wrong.
+
+That's it. From now on, the bot runs daily at 14:00 UK time and only emails you when you win (plus a summary every Sunday).
 
 ## Useful commands
 
 ```bash
+# Pull the latest published image and restart
+docker compose pull && docker compose up -d
+
 # Trigger a real run right now (instead of waiting for 2pm)
 docker exec pickmypostcode-checker python run.py
 
@@ -41,10 +53,12 @@ docker compose down
 
 ## Dev mode (watch it run in a live browser)
 
-Useful if the site's HTML changes and locators break:
+For when the site's HTML changes and locators break. Clone the repo, then:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm pickmypostcode-checker
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --build pickmypostcode-checker
 ```
 
 Open <http://localhost:7900> (password: `secret`) to watch Chromium drive itself. Python sources are bind-mounted, so edits take effect on the next run without rebuilding.
+
+Every push to `main` triggers a multi-arch image rebuild via [GitHub Actions](.github/workflows/dockerpush.yml).
