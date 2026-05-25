@@ -35,7 +35,7 @@ def sendEmail(to, subject, message, html_message, attachment_path=None):
                 msg.add_attachment(file_data, maintype=mime_type, subtype=mime_subtype, filename=file_name)
 
         # send email
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30) as smtp:
             smtp.login(email_address, email_password)
             smtp.send_message(msg)
         return True

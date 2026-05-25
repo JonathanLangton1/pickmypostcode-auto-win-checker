@@ -31,11 +31,11 @@ def sendStartupTestEmail():
 def main():
     try:
         # This is needed if executing file from outside of project root directory
-        dir = os.path.dirname(__file__)
+        script_dir = os.path.dirname(__file__)
 
         # If database file doesn't exist, create one
-        if not os.path.isfile(f'{dir}/logs/pastData.json'):
-            with open(f'{dir}/logs/pastData.json', 'w') as f:
+        if not os.path.isfile(f'{script_dir}/logs/pastData.json'):
+            with open(f'{script_dir}/logs/pastData.json', 'w') as f:
                 f.write("{}")
 
         # Sign in using Selenium
@@ -69,7 +69,7 @@ def main():
         if date.today().weekday() == 6:
             summary = summariseWeeklyResults(os.environ.get("YOUR_POSTCODE"))
             print('Sending data summary')
-            with open(f'{dir}/logs/pastData.json') as f:
+            with open(f'{script_dir}/logs/pastData.json') as f:
                 weeklyData = json.load(f)
             
             sendEmail(
@@ -86,7 +86,7 @@ def main():
 
         # Attempt to send an error notification email
         try:
-            screenshot_path = f'{dir}/logs/error_screenshot.png'
+            screenshot_path = f'{script_dir}/logs/error_screenshot.png'
             sendEmail(
                 os.environ.get("NOTIFICATION_EMAIL_ADDRESS"),
                 'Script Error Notification 🚨',

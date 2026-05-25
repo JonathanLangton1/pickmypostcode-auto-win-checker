@@ -9,8 +9,7 @@ from datetime import date
 import time
 
 def browserLogin():
-    # This is needed if executing file from outside of project root directory
-    dir = os.path.dirname(__file__)
+    script_dir = os.path.dirname(__file__)
 
     # Use the SELENIUM_URL environment variable to connect to the Selenium container
     selenium_url = os.getenv("SELENIUM_URL", "http://selenium-chrome:4444/wd/hub")
@@ -44,18 +43,15 @@ def browserLogin():
         wait = WebDriverWait(driver, 20)
         print("Waiting for the element to be present...")
         
-        # First, wait for the presence of the element
-        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[1]/div/div/div[4]/div[2]/div/nav/button")))
-        print("Element is present.")
-        
-        # Now, wait for it to be clickable
-        wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[1]/div/div/div[4]/div[2]/div/nav/button")))
-        print("Element found and clickable.")
-
+        # Three "Sign in" buttons exist in the DOM (mobile menu, modal submit, desktop nav).
+        # The desktop nav one is the only one visible on initial load — `btn__sm` uniquely identifies it.
+        sign_in_button_xpath = "//button[contains(@class, 'btn__sm') and normalize-space()='Sign in']"
+        wait.until(EC.element_to_be_clickable((By.XPATH, sign_in_button_xpath)))
+        print("Sign-in button is clickable.")
 
         # Sign in
         print('Signing in')
-        driver.find_element(By.XPATH, "/html/body/div[1]/div[1]/div/div/div[4]/div[2]/div/nav/button").click()
+        driver.find_element(By.XPATH, sign_in_button_xpath).click()
 
         # Scope all lookups to the sign-in modal's form so we never hit the hidden mobile/desktop duplicate
         modal_form = "//form[.//h3[normalize-space()='Sign into your account']]"
@@ -80,24 +76,22 @@ def browserLogin():
         print("Requesting Bonus Draw Draw Page")
         driver.get("https://pickmypostcode.com/your-bonus/")
         time.sleep(0.5)
-        driver.close()
 
     except Exception as e:
         print(f"An error occurred: {e}")
-        driver.save_screenshot(f'{dir}/logs/error_screenshot.png')
+        driver.save_screenshot(f'{script_dir}/logs/error_screenshot.png')
         raise e
 
     finally:
-        # Close the browser
         print('Closing browser')
         driver.quit()
 
     # Update database with the current date of login
-    with open(f'{dir}/logs/pastData.json') as f:
+    with open(f'{script_dir}/logs/pastData.json') as f:
         pastData = json.load(f)
         pastData['lastBrowserLogin'] = str(date.today())
 
-    with open(f'{dir}/logs/pastData.json', 'w') as f:
+    with open(f'{script_dir}/logs/pastData.json', 'w') as f:
         json.dump(pastData, f, indent=2)
 
 if __name__ == "__main__":

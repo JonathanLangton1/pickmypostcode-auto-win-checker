@@ -3,8 +3,8 @@ import json
 import os
 
 def summariseWeeklyResults(YOUR_POSTCODE):
-    dir = os.path.dirname(__file__)
-    with open(f'{dir}/logs/pastData.json') as f:
+    script_dir = os.path.dirname(__file__)
+    with open(f'{script_dir}/logs/pastData.json') as f:
         pastData = json.load(f)
 
     today = date.today()
