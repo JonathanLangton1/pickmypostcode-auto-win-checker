@@ -2,7 +2,7 @@
 
 Automatically signs into [pickmypostcode.com](https://pickmypostcode.com/) every day at 2pm and emails you when your postcode wins.
 
-Runs on `amd64` and `arm64` (Raspberry Pi, Apple Silicon).
+Works on any Docker host — Linux server (x86 or ARM), Raspberry Pi, or Mac (Intel or Apple Silicon).
 
 ## Requirements
 
