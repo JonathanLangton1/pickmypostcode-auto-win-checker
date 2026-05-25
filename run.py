@@ -271,9 +271,10 @@ def runTestCheck():
     # What happens from here (only meaningful if setup is healthy)
     if all_passed:
         console.print(Panel(
-            "• Runs automatically every day at [bold]14:00 UK time[/bold] — no action needed\n"
-            "• Emails arrive on [bold green]wins[/bold green] (with a claim link) or each [bold]Sunday[/bold] (weekly summary)\n"
-            "• Run manually anytime with [cyan]docker exec pickmypostcode-checker python run.py[/cyan]",
+            "[bold]Sit back and relax[/bold] — the bot runs daily at [bold]14:00 UK time[/bold].\n\n"
+            "You'll automatically get:\n"
+            "• A [bold green]winning email[/bold green] (with a claim link) every time your postcode hits\n"
+            "• A [bold]weekly summary[/bold] every Sunday",
             title="[bold]What happens next[/bold]",
             title_align="left",
             border_style="cyan",
