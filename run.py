@@ -268,7 +268,19 @@ def runTestCheck():
             ))
         console.print()
 
-    if not all_passed:
+    # What happens from here (only meaningful if setup is healthy)
+    if all_passed:
+        console.print(Panel(
+            "• Runs automatically every day at [bold]14:00 UK time[/bold] — no action needed\n"
+            "• Emails arrive on [bold green]wins[/bold green] (with a claim link) or each [bold]Sunday[/bold] (weekly summary)\n"
+            "• Run manually anytime with [cyan]docker exec pickmypostcode-checker python run.py[/cyan]",
+            title="[bold]What happens next[/bold]",
+            title_align="left",
+            border_style="cyan",
+            expand=False,
+        ))
+        console.print()
+    else:
         sys.exit(1)
 
 
