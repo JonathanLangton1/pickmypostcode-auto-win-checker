@@ -12,6 +12,9 @@ import traceback
 from contextlib import redirect_stdout
 
 
+RUN_TIME = "14:00"  # daily scheduler fires at this local time (TZ from env)
+
+
 DRAW_LABELS = {
     'mainDraw':        'Main Draw',
     'surveyDraw':      'Survey Draw',
@@ -270,8 +273,9 @@ def runTestCheck():
 
     # What happens from here (only meaningful if setup is healthy)
     if all_passed:
+        tz_label = datetime.now().astimezone().tzname() or os.environ.get("TZ", "UTC")
         console.print(Panel(
-            "[bold]Sit back and relax[/bold] — the bot runs daily at [bold]14:00 UK time[/bold].\n\n"
+            f"[bold]Sit back and relax[/bold] — the bot runs daily at [bold]{RUN_TIME} {tz_label}[/bold].\n\n"
             "You'll automatically get:\n"
             "• A [bold green]winning email[/bold green] (with a claim link) every time your postcode hits\n"
             "• A [bold]weekly summary[/bold] every Sunday",
