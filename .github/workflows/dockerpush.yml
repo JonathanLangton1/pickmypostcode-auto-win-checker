@@ -32,7 +32,6 @@ jobs:
           images: jonathanlangton1/pickmypostcode-auto-win-checker
           tags: |
             type=raw,value=latest
-            type=raw,value=main
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
