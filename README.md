@@ -2,7 +2,7 @@
 
 Automatically signs into [pickmypostcode.com](https://pickmypostcode.com/) every day at 2pm and emails you when your postcode wins.
 
-Works on any Docker host — Linux server (x86 or ARM), Raspberry Pi, or Mac (Intel or Apple Silicon).
+Works on any Docker host - Linux server (x86 or ARM), Raspberry Pi, or Mac (Intel or Apple Silicon).
 
 ## Requirements
 
@@ -59,6 +59,6 @@ For when the site's HTML changes and locators break. Clone the repo, then:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --build pickmypostcode-checker
 ```
 
-Open <http://localhost:7900> (password: `secret`) to watch Chromium drive itself. Python sources are bind-mounted, so edits take effect on the next run without rebuilding.
+Open [http://localhost:7900](http://localhost:7900) (password: `secret`) to watch Chromium drive itself. Python sources are bind-mounted, so edits take effect on the next run without rebuilding.
 
 Every push to `main` triggers a multi-arch image rebuild via [GitHub Actions](.github/workflows/dockerpush.yml).
