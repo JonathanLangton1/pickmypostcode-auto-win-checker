@@ -1,8 +1,20 @@
-"""Shared fakes: a controllable clock and synthetic API payloads (no real postcodes or user IDs)."""
+"""Shared fakes: a controllable clock, synthetic API payloads (no real postcodes or user IDs) and a
+stalled Selenium server."""
+import socket
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from draws import UK, latestDraw
 
 POSTCODE = 'ZZ9 9ZZ'
+
+
+@contextmanager
+def stalledSeleniumServer():
+    """A local 'Selenium server' that accepts connections and never answers."""
+    with socket.socket() as server:
+        server.bind(('127.0.0.1', 0))
+        server.listen()
+        yield server, f'http://127.0.0.1:{server.getsockname()[1]}/wd/hub'
 
 
 def uk(*args):

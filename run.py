@@ -56,7 +56,7 @@ def _check(history, scheduled, retry, now, sleep):
             retry_soon = any(now() < draw.closesAt(day) for draw, day in missing)
     except Exception:
         errors.append(_logError('Checking the draws failed'))
-        _sendWins(history, now, sleep)  # still retry wins from earlier checks
+        _sendWins(history, now, sleep)  # still retry wins from earlier checks that can't have been taken
         retry_soon = True
 
     uk_now = now().astimezone(UK)
@@ -78,15 +78,8 @@ def _checkDraws(history, now, sleep):
     Returns the (draw, day) of latest draws still unavailable, and when the last fetch began."""
     while True:
         fetched_at = now()
-        drawResults = fetchDraws(sleep=sleep)
-        current = now()
-        results, missing = readDraws(drawResults, history.postcode, current)
-        for result in results:
-            history.record(result)
-            print(f"{result.draw.label} ({drawnText(result.draw, result.day)}): {result.winningText()}"
-                  f"{' — YOUR POSTCODE' if result.hasWon else ''}")
-        history.save()
-        _sendWins(history, now, sleep)
+        missing, observed = _observe(history, now, sleep)
+        _sendWins(history, now, sleep, observed)
 
         current = now()
         if not any(current - draw.drawnAt(day) < PUBLISH_WAIT for draw, day in missing):
@@ -95,9 +88,28 @@ def _checkDraws(history, now, sleep):
         sleep(REFETCH_SECONDS)
 
 
-def _sendWins(history, now, sleep):
+def _observe(history, now, sleep):
+    """Fetch and record every draw. Returns the (draw, day) of latest draws the API isn't showing,
+    and the (draw key, day) of every result it just showed."""
+    results, missing = readDraws(fetchDraws(sleep=sleep), history.postcode, now())
+    for result in results:
+        history.record(result)
+        print(f"{result.draw.label} ({drawnText(result.draw, result.day)}): {result.winningText()}"
+              f"{' — YOUR POSTCODE' if result.hasWon else ''}")
+    history.save()
+    return missing, {(r.draw.key, r.day) for r in results}
+
+
+def _sendWins(history, now, sleep, observed=frozenset()):
+    """Email every win not yet emailed that can still be claimed, together, retrying a failed send.
+    Someone else at the postcode can take a first-come prize at any moment, so its win is only sent
+    straight after the API showed it unclaimed (it's in `observed`, re-fetched before each retry);
+    otherwise it waits for a later check."""
     for attempt in range(1, EMAIL_ATTEMPTS + 1):
-        wins = history.pendingWins(now())  # re-checked before every attempt, so a closed prize is never sent
+        pending = history.pendingWins(now())  # re-checked before every attempt, so a closed prize is never sent
+        wins = [w for w in pending if not w.draw.firstCome or (w.draw.key, w.day) in observed]
+        if len(wins) < len(pending):
+            print("Not sending a first-come win until the results API shows it's still unclaimed.")
         if not wins:
             return
         win_text, win_html = _winEmail(wins)
@@ -108,7 +120,17 @@ def _sendWins(history, now, sleep):
             return
         if attempt < EMAIL_ATTEMPTS:
             sleep(EMAIL_RETRY_SECONDS)
+            if any(w.draw.firstCome for w in wins):
+                observed = _reobserve(history, now, sleep)
     print("Couldn't send the winning email; it will be retried while the prize can still be claimed.")
+
+
+def _reobserve(history, now, sleep):
+    try:
+        return _observe(history, now, sleep)[1]
+    except Exception as error:
+        print(f"Couldn't re-check the results ({error}).")
+        return frozenset()
 
 
 def _winEmail(wins):

@@ -1,23 +1,27 @@
+import functools
 import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
 from contextlib import redirect_stdout
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest import mock
 
+import browserLogin
 import healthCheck
+import history
 import run
 import scheduler
 from draws import DRAWS, DrawResult
 from history import History, openHistory
 from summariseWeeklyResults import summariseWeeklyResults
-from tests.support import POSTCODE, FakeClock, drawResults, latestResults, uk
+from tests.support import POSTCODE, FakeClock, drawResults, latestResults, stalledSeleniumServer, uk
 
 WIN = 'You have won the postcode lottery 🎉'
 WEEKLY = 'Weekly postcode lottery data summary 📊'
@@ -183,6 +187,73 @@ class WinAlertTest(CheckerTest):
         self.assertTrue(self.retrySoon)
 
 
+class FirstComeFreshnessTest(CheckerTest):
+    """Someone else at the postcode can take the Mini Draw or Stackpot at any moment, so a 'claim now'
+    email is only sent straight after the API showed the prize unclaimed."""
+    EVENING = uk(2026, 10, 1, 18, 1)
+
+    def failFirstWinEmail(self):
+        failures = iter([False])
+        self.deliver = lambda subject: next(failures, True) if subject == WIN else True
+
+    def test_email_retry_re_reads_the_api_and_drops_a_prize_claimed_meanwhile(self):
+        self.failFirstWinEmail()
+        self.check(self.EVENING, latestResults(self.EVENING, mini=POSTCODE),
+                   latestResults(self.EVENING, mini=POSTCODE, miniClaims=1))
+        self.assertEqual(len(self.sent(WIN)), 1)  # only the failed attempt
+        self.assertEqual(self.fetches, 2)
+        self.assertTrue(self.entry('2026-10-01', 'miniDraw')['claimed'])
+        self.assertIsNone(self.entry('2026-10-01', 'miniDraw')['notified'])
+        self.assertFalse(self.retrySoon)
+
+    def test_email_retry_sends_once_the_api_confirms_it_is_still_unclaimed(self):
+        self.failFirstWinEmail()
+        self.check(self.EVENING, latestResults(self.EVENING, mini=POSTCODE))
+        self.assertEqual(len(self.sent(WIN)), 2)
+        self.assertEqual(self.fetches, 2)
+        self.assertTrue(self.entry('2026-10-01', 'miniDraw')['notified'])
+
+    def test_first_successful_send_needs_no_extra_fetch(self):
+        self.check(self.EVENING, latestResults(self.EVENING, mini=POSTCODE))
+        self.assertEqual(self.fetches, 1)
+
+    def test_unverifiable_first_come_win_waits_while_other_wins_in_the_email_are_sent(self):
+        self.failFirstWinEmail()
+        self.check(self.EVENING, latestResults(self.EVENING, main=POSTCODE, mini=POSTCODE), ConnectionError('API down'))
+        retried = self.sent(WIN)[1]['text']
+        self.assertIn('Main Draw', retried)
+        self.assertNotIn('Mini Draw', retried)
+        self.assertTrue(self.entry('2026-10-01', 'mainDraw')['notified'])
+        self.assertIsNone(self.entry('2026-10-01', 'miniDraw')['notified'])
+        self.assertTrue(self.retrySoon)
+
+    def test_cached_first_come_win_is_not_sent_when_the_api_fails_or_omits_it(self):
+        self.deliver = lambda subject: subject != WIN
+        self.check(self.EVENING, latestResults(self.EVENING, mini=POSTCODE))
+        self.deliver = True
+        withoutMini = latestResults(self.EVENING)
+        del withoutMini['mini']
+        for name, later in (('API down', ConnectionError('API down')), ('Mini missing', withoutMini)):
+            with self.subTest(name):
+                self.check(self.EVENING + timedelta(minutes=5), later, retry=True)
+                self.assertEqual(self.sent(WIN), [])
+                self.assertIsNone(self.entry('2026-10-01', 'miniDraw')['notified'])
+                self.assertTrue(self.retrySoon)  # kept pending for a check that can confirm it
+
+        self.check(self.EVENING + timedelta(minutes=10), latestResults(self.EVENING, mini=POSTCODE), retry=True)
+        self.assertEqual(len(self.sent(WIN)), 1)
+        self.assertTrue(self.entry('2026-10-01', 'miniDraw')['notified'])
+
+    def test_cached_stackpot_win_is_not_sent_when_the_api_fails(self):
+        night = uk(2026, 10, 1, 21, 1)
+        self.deliver = lambda subject: subject != WIN
+        self.check(night, latestResults(night, stackpot=(POSTCODE,)))
+        self.deliver = True
+        self.check(night + timedelta(minutes=5), ConnectionError('API down'), retry=True)
+        self.assertEqual(self.sent(WIN), [])
+        self.assertTrue(self.retrySoon)
+
+
 class SchedulerRetryTest(CheckerTest):
     def test_short_email_outage_at_9pm_is_recovered_well_before_2am_without_duplicates(self):
         night = uk(2026, 10, 1, 21, 1)
@@ -237,6 +308,20 @@ class BrowserTest(CheckerTest):
         self.assertEqual(self.sent(ERROR), [])
         self.check(uk(2026, 10, 2, 14, 0))
         self.assertEqual(len(self.sent(ERROR)), 1)
+
+    def test_stalled_selenium_server_is_cut_off_and_later_checks_still_run(self):
+        afternoon = uk(2026, 10, 1, 14, 0)
+        with stalledSeleniumServer() as (_, url), mock.patch.dict(os.environ, {'SELENIUM_URL': url}), \
+                mock.patch.object(run, 'browserLogin', functools.partial(browserLogin.browserLogin, time_limit=2)):
+            self.check(afternoon, latestResults(afternoon, main=POSTCODE))
+        self.assertEqual(len(self.sent(WIN)), 1)
+        [error] = self.sent(ERROR)
+        self.assertIn('The browser was stopped after 2 seconds', error['text'])
+        self.assertIsNone(self.state()['lastBrowserLogin'])
+
+        self.check(uk(2026, 10, 1, 18, 1))  # the next check runs, and signs in again
+        self.browser.assert_called_once()
+        self.assertEqual(self.state()['lastBrowserLogin'], '2026-10-01')
 
     def test_unreadable_draw_is_reported(self):
         morning = uk(2026, 10, 1, 9, 1)
@@ -378,6 +463,105 @@ class HistoryFileTest(CheckerTest):
         self.assertEqual(len(self.sent(WIN)), 1)
         self.assertEqual(len(self.setAside('pastData.json.corrupt-')), 1)
 
+    def test_malformed_history_is_kept_aside_once_and_checks_continue(self):
+        valid = {'version': 2, 'postcode': 'ZZ99ZZ', 'draws': {}}
+        entry = {'winningPostcode': 'AA1 1AA', 'hasWon': False, 'claimed': False, 'notified': None}
+        cases = {
+            'a list': [],
+            'null': None,
+            'null draws': {**valid, 'draws': None},
+            'draws as a list': {**valid, 'draws': []},
+            'no postcode': {'version': 2, 'draws': {}},
+            'a bad draw day': {**valid, 'draws': {'1 Oct': {'mainDraw': entry}}},
+            'a day that is not an object': {**valid, 'draws': {'2026-09-30': []}},
+            'an incomplete entry': {**valid, 'draws': {'2026-09-30': {'mainDraw': {'winningPostcode': 'AA1 1AA'}}}},
+            'a bad postcode': {**valid, 'draws': {'2026-09-30': {'mainDraw': {**entry, 'winningPostcode': 7}}}},
+            'a bad receipt': {**valid, 'lastBrowserLogin': 'yesterday'},
+        }
+        afternoon = uk(2026, 10, 1, 14, 0)
+        for name, data in cases.items():
+            with self.subTest(name):
+                shutil.rmtree(self.logs, ignore_errors=True)
+                self.write(data)
+                self.check(afternoon, latestResults(afternoon, main=POSTCODE))
+                self.assertEqual(len(self.sent(WIN)), 1)
+                self.assertEqual(self.sent(ERROR), [])
+                self.assertTrue(self.entry('2026-10-01', 'mainDraw')['notified'])
+                [aside] = self.setAside('pastData.json.corrupt-')
+                with open(os.path.join(self.logs, aside)) as f:
+                    self.assertEqual(json.load(f), data)
+
+                self.check(afternoon + timedelta(minutes=5), latestResults(afternoon, main=POSTCODE))
+                self.assertEqual(self.sent(WIN), [])
+                self.assertEqual(len(self.setAside('pastData.json.corrupt-')), 1)
+
+    def test_a_previous_postcode_unsafe_in_a_filename_is_still_set_aside(self):
+        old = {'version': 2, 'postcode': 'BAD/PC', 'draws': {}}
+        self.write(old)
+        afternoon = uk(2026, 10, 1, 14, 0)
+        self.check(afternoon, latestResults(afternoon, main=POSTCODE))
+        self.assertEqual(self.sent(ERROR), [])
+        self.assertEqual(len(self.sent(WIN)), 1)
+        self.assertEqual(self.state()['postcode'], 'ZZ99ZZ')
+        [aside] = self.setAside('pastData.json.postcode-BAD_PC-')
+        self.assertEqual(self.state(aside), old)
+
+    def test_set_aside_files_are_never_overwritten(self):
+        os.makedirs(self.logs)
+        path = os.path.join(self.logs, 'pastData.json')
+        with mock.patch.object(history, 'datetime') as clock, redirect_stdout(io.StringIO()):
+            clock.now.return_value = datetime(2026, 10, 1, 14, 0, 0)
+            for content in ('first', 'second', 'third'):
+                with open(path, 'w') as f:
+                    f.write(content)
+                history._setAside(path, 'corrupt', move=content != 'third')
+        kept = {}
+        for name in self.setAside('pastData.json.corrupt-'):
+            with open(os.path.join(self.logs, name)) as f:
+                kept[name] = f.read()
+        self.assertEqual(sorted(kept.values()), ['first', 'second', 'third'])
+
+    def test_a_malformed_delivery_receipt_does_not_suppress_a_claimable_win(self):
+        evening = uk(2026, 10, 1, 18, 1)
+        for receipt in ('not-a-date', '', '2026-10-01T18:01:30'):  # the last lacks a timezone
+            with self.subTest(receipt):
+                shutil.rmtree(self.logs, ignore_errors=True)
+                data = {'version': 2, 'postcode': 'ZZ99ZZ', 'draws': {'2026-10-01': {'miniDraw': {
+                    'winningPostcode': POSTCODE, 'hasWon': True, 'claimed': False, 'notified': receipt}}}}
+                self.write(data)
+                self.check(evening, latestResults(evening, mini=POSTCODE))
+                self.assertIn('Mini Draw', self.sent(WIN)[0]['text'])
+                self.assertTrue(self.entry('2026-10-01', 'miniDraw')['notified'])
+                [aside] = self.setAside('pastData.json.corrupt-')
+                self.assertEqual(self.state(aside), data)
+
+    def test_unknown_draw_keys_are_kept_without_validation(self):
+        self.write({'version': 2, 'postcode': 'ZZ99ZZ', 'draws': {'2026-10-01': {'futureDraw': 'anything'}}})
+        self.check(uk(2026, 10, 1, 14, 0))
+        self.assertEqual(self.setAside('pastData.json.corrupt-'), [])
+        self.assertEqual(self.entry('2026-10-01', 'futureDraw'), 'anything')
+
+    def test_unsupported_version_is_left_untouched_and_reported(self):
+        future = json.dumps({'version': 3, 'postcode': 'ZZ99ZZ', 'draws': None})
+        self.write(future)
+        self.check(uk(2026, 10, 1, 14, 0))
+        self.assertIn('unsupported version 3', self.sent(ERROR)[0]['text'])
+        self.assertEqual(self.sent(WIN), [])
+        with open(os.path.join(self.logs, 'pastData.json')) as f:
+            self.assertEqual(f.read(), future)
+        self.assertEqual(sorted(os.listdir(self.logs)), ['pastData.json', 'pastData.json.lock'])
+
+    def test_unreadable_parts_of_version_1_history_are_skipped(self):
+        broken = self.legacyDay()
+        broken['drawResults']['mainDraw']['winningPostcode'] = 7
+        self.write({'lastBrowserLogin': 'never', '2026-09-30': broken, 'notADate': self.legacyDay()})
+        self.check(uk(2026, 10, 1, 14, 0))
+        self.assertEqual(self.sent(ERROR), [])
+        self.assertIsNone(self.entry('2026-09-30', 'mainDraw'))
+        self.assertEqual(self.entry('2026-09-30', 'surveyDraw')['winningPostcode'], 'XX1 1XX')
+        self.browser.assert_called_once()  # the unreadable sign-in receipt was dropped
+        self.assertEqual(self.state()['lastBrowserLogin'], '2026-10-01')
+
     def test_changing_postcode_sets_the_old_history_aside(self):
         morning = uk(2026, 10, 1, 9, 1)
         both = latestResults(morning, stackpot=(POSTCODE, OTHER_POSTCODE))
@@ -428,15 +612,21 @@ class HistoryFileTest(CheckerTest):
 
 
 class HealthCheckTest(CheckerTest):
-    def healthCheck(self, payload):
+    def healthCheck(self, payload, start=uk(2026, 10, 1, 14, 0), browserSeconds=0, emailSeconds=0):
         self.payloads = [payload]
         selenium = mock.Mock()
         selenium.json.return_value = {'value': {'ready': True}}
         output = io.StringIO()
-        clock = FakeClock(uk(2026, 10, 1, 14, 0))
+        clock = FakeClock(start)
+        self.browser.side_effect = lambda: clock.sleep(browserSeconds)
+
+        def slowSend(*args, **kwargs):
+            clock.sleep(emailSeconds)
+            return self._send(*args, **kwargs)
+
         with mock.patch('requests.get', return_value=selenium), \
                 mock.patch.object(healthCheck, '_utcNow', clock.now), \
-                mock.patch.object(healthCheck, 'sendEmail', side_effect=self._send), \
+                mock.patch.object(healthCheck, 'sendEmail', side_effect=slowSend), \
                 mock.patch.object(healthCheck, 'fetchDraws', side_effect=self._fetch), \
                 mock.patch.object(healthCheck, 'browserLogin', self.browser), redirect_stdout(output):
             try:
@@ -476,6 +666,36 @@ class HealthCheckTest(CheckerTest):
         [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
         self.assertNotIn('working perfectly', summary['text'])
         self.assertIn('unavailable: Main Draw (Thu 01 Oct 12:00)', summary['text'])
+
+    def test_a_slow_browser_run_past_2am_does_not_report_a_closed_mini_as_claimable(self):
+        code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-09-30 18:00:00',
+                                                    midday='2026-09-30 12:00:00', stackpotAt='2026-09-30 21:00:00'),
+                                        start=uk(2026, 10, 1, 1, 59), browserSeconds=180)
+        self.assertEqual(code, 0)
+        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        self.assertNotIn('You won', summary['text'])
+        self.assertNotIn('Claim now', summary['html'])
+        self.assertIn('won · closed', summary['text'])
+        self.assertIn('won · closed', output)
+        self.assertNotIn('JACKPOT', output)
+
+    def test_a_slow_browser_run_past_6pm_accepts_the_newly_published_mini(self):
+        code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-10-01 18:00:00'),
+                                        start=uk(2026, 10, 1, 17, 59), browserSeconds=180)
+        self.assertEqual(code, 0)
+        self.assertNotIn('unavailable', output)
+        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        self.assertIn('You won the Mini Draw', summary['text'])
+        self.assertIn('JACKPOT', output)
+
+    def test_console_results_are_as_of_after_a_slow_email(self):
+        code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-09-30 18:00:00',
+                                                    midday='2026-09-30 12:00:00', stackpotAt='2026-09-30 21:00:00'),
+                                        start=uk(2026, 10, 1, 1, 58), emailSeconds=180)
+        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        self.assertIn('You won the Mini Draw', summary['text'])  # still claimable when it was written
+        self.assertIn('won · closed', output)
+        self.assertNotIn('JACKPOT', output)
 
 
 class CommandLineTest(unittest.TestCase):

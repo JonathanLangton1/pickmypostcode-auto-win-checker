@@ -202,7 +202,8 @@ def runTestCheck():
     # 3) Results API fetch
     try:
         with console.status("  Fetching draw results...", spinner="dots"):
-            results, missing = readDraws(fetchDraws(), your_postcode, now)
+            drawResults = fetchDraws()
+            results, missing = readDraws(drawResults, your_postcode, _utcNow())  # the browser may have taken minutes
         if missing:
             console.print(f"  [red]✗[/red] Results API — [red]unavailable: {missingText(missing)}[/red]")
         else:
@@ -214,6 +215,7 @@ def runTestCheck():
 
     # 4) Email delivery (only meaningful if we have results to send)
     if results:
+        now = _utcNow()  # whether a win can still be claimed is as of now
         summary_html = _buildSummaryHtml(results, missing, your_postcode, now)
         text = _buildSummaryText(results, missing, your_postcode, now)
         with console.status(f"  Sending summary email to {notification_email}...", spinner="dots"):
@@ -245,6 +247,7 @@ def runTestCheck():
 
     # Latest results table
     if results:
+        now = _utcNow()
         table = Table(box=box.ROUNDED, header_style="bold cyan", title="[bold]Latest Winners[/bold]", title_justify="left")
         table.add_column("Draw", style="bold")
         table.add_column("Drawn")

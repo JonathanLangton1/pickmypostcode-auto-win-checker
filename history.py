@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 import fcntl
 import json
 import os
+import re
 import shutil
 import tempfile
 from draws import DRAWS, DrawResult, normalisePostcode
@@ -12,6 +13,7 @@ from draws import DRAWS, DrawResult, normalisePostcode
 VERSION = 2
 RETENTION_DAYS = 10
 DRAWS_BY_KEY = {d.key: d for d in DRAWS}
+RECEIPTS = ('lastBrowserLogin', 'lastWeeklySummary', 'lastErrorEmail')
 
 
 @contextmanager
@@ -106,23 +108,80 @@ def _load(path, postcode):
             data = json.load(f)
     except FileNotFoundError:
         return {}
-    except json.JSONDecodeError:
-        print(f'History was unreadable; moved it to {_setAside(path, "corrupt")} and started afresh.')
-        return {}
-    if data.get('version') == VERSION:
-        if data.get('postcode') == postcode:
-            return data
-        aside = _setAside(path, f'postcode-{data.get("postcode")}')
-        print(f'YOUR_POSTCODE changed; moved the previous postcode\'s history to {aside} and started afresh.')
-        return {}
-    if 'version' in data:
-        raise ValueError(f'{path} has unsupported version {data["version"]}')
-    print(f'Upgrading history; the original is kept at {_setAside(path, "v1-backup", move=False)}.')
-    return _fromVersion1(data)
+    except ValueError as error:
+        return _startAfresh(path, f'not JSON: {error}')
+    if not isinstance(data, dict):
+        return _startAfresh(path, 'not a JSON object')
+    if 'version' not in data:
+        print(f'Upgrading history; the original is kept at {_setAside(path, "v1-backup", move=False)}.')
+        return _fromVersion1(data)
+    if data['version'] != VERSION:
+        raise ValueError(f'{path} has unsupported version {data["version"]!r}')
+    problem = _problem(data)
+    if problem:
+        return _startAfresh(path, problem)
+    if data['postcode'] == postcode:
+        return data
+    aside = _setAside(path, f'postcode-{data["postcode"]}')
+    print(f'YOUR_POSTCODE changed; moved the previous postcode\'s history to {aside} and started afresh.')
+    return {}
+
+
+def _startAfresh(path, problem):
+    print(f'History was unreadable ({problem}); moved it to {_setAside(path, "corrupt")} and started afresh.')
+    return {}
+
+
+def _problem(data):
+    """Why version 2 `data` can't be used, checking every value History reads; None if it can."""
+    if not isinstance(data.get('postcode'), str):
+        return 'no postcode'
+    for key in RECEIPTS:
+        if data.get(key) is not None and not _isDay(data[key]):
+            return f'{key} is not a date'
+    if not isinstance(data.get('draws'), dict):
+        return 'draws is not an object'
+    for day, entries in data['draws'].items():
+        if not _isDay(day) or not isinstance(entries, dict):
+            return f'unreadable draws for {day!r}'
+        for key, entry in entries.items():
+            if key in DRAWS_BY_KEY and not _isEntry(entry):
+                return f'unreadable {key} for {day}'
+    return None
+
+
+def _isDay(value):
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except (TypeError, ValueError):
+        return False
+
+
+def _isEntry(entry):
+    if not isinstance(entry, dict):
+        return False
+    winning = entry.get('winningPostcode')
+    return ((isinstance(winning, str) or (isinstance(winning, list) and all(isinstance(p, str) for p in winning)))
+            and isinstance(entry.get('hasWon'), bool)
+            and isinstance(entry.get('claimed', False), bool)
+            and 'notified' in entry and (entry['notified'] is None or _isTimestamp(entry['notified'])))
+
+
+def _isTimestamp(value):
+    """A delivery receipt, as written by markNotified: a timezone-aware ISO datetime."""
+    try:
+        return datetime.fromisoformat(value).tzinfo is not None
+    except (TypeError, ValueError):
+        return False
 
 
 def _setAside(path, label, move=True):
-    aside = f'{path}.{label}-{datetime.now():%Y%m%d%H%M%S}'
+    """Keep the file as path.label-timestamp, never overwriting an earlier one."""
+    label = re.sub(r'[^A-Za-z0-9-]', '_', label)[:40]
+    stem = f'{path}.{label}-{datetime.now():%Y%m%d%H%M%S}'
+    aside, n = stem, 1
+    while os.path.exists(aside):  # only one check runs at a time, so this can't race
+        aside, n = f'{stem}-{n}', n + 1
     if move:
         os.replace(path, aside)
     else:
@@ -134,25 +193,26 @@ def _fromVersion1(legacy):
     """Version 1 had no postcode, so it's assumed to be YOUR_POSTCODE's. It kept one snapshot per check
     date, normally from the 2pm run, which still showed the previous evening's Mini Draw. It never recorded
     whether its win email was delivered, so its wins count as not notified: a still-open one is emailed
-    (perhaps again) rather than risk losing it."""
+    (perhaps again) rather than risk losing it. Unreadable parts are skipped."""
     draws = {}
     for checked, snapshot in legacy.items():
+        if checked == 'lastBrowserLogin':
+            continue
         try:
             checkedDay = date.fromisoformat(checked)
             for key, old in snapshot['drawResults'].items():
                 if key not in DRAWS_BY_KEY:
                     continue
+                entry = {'winningPostcode': old['winningPostcode'], 'hasWon': bool(old['hasWon']),
+                         'claimed': False, 'notified': None}
+                if not _isEntry(entry):
+                    raise ValueError(f'unreadable {key}')
                 day = checkedDay - timedelta(days=1) if key == 'miniDraw' else checkedDay
-                draws.setdefault(day.isoformat(), {})[key] = {
-                    'winningPostcode': old['winningPostcode'],
-                    'hasWon': bool(old['hasWon']),
-                    'claimed': False,
-                    'notified': None,
-                }
-        except (ValueError, KeyError, TypeError, AttributeError):
-            if checked != 'lastBrowserLogin':
-                print(f'Skipping unreadable history entry {checked!r}')
-    return {'lastBrowserLogin': legacy.get('lastBrowserLogin'), 'draws': draws}
+                draws.setdefault(day.isoformat(), {})[key] = entry
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            print(f'Skipping unreadable history entry {checked!r} ({error})')
+    lastBrowserLogin = legacy.get('lastBrowserLogin')
+    return {'lastBrowserLogin': lastBrowserLogin if _isDay(lastBrowserLogin) else None, 'draws': draws}
 
 
 def _toResult(day, draw, entry):
