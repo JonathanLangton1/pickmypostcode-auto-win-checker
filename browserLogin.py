@@ -24,7 +24,13 @@ DRAW_PAGES = (('Video Draw', 'video/', 1), ('Survey Draw', 'survey-draw/', 0.5),
 # opens the sign-in form. The site reloads the page after a successful sign-in, and only then shows the
 # account menu, whose Logout link is the signal that it worked.
 SIGN_IN_BUTTON = "//button[normalize-space()='Sign in']"
-SIGN_IN_FORM = "//form[.//input[@id='postcode'] and .//input[@id='email']]"
+# The homepage has a registration form and a sliding sign-in panel, and both contain inputs with
+# the ids postcode and email. Immediately after Sign in is clicked the panel is still not
+# displayed, so a locator that matches any such form types the postcode into the registration
+# form. The panel then finishes opening and the email and submit hit the sign-in form, which
+# never received the postcode. Limit the locator to the form whose submit button says Sign in.
+# _visible waits until that form's fields are shown.
+SIGN_IN_FORM = "//form[.//button[@type='submit' and normalize-space()='Sign in']]"
 SIGNED_IN = "//a[contains(@href, '/api/index.php/logout')]"
 
 
