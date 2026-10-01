@@ -17,6 +17,7 @@ services:
     volumes:
       - ./browserLogin.py:/app/browserLogin.py
       - ./draws.py:/app/draws.py
+      - ./healthCheck.py:/app/healthCheck.py
       - ./history.py:/app/history.py
       - ./run.py:/app/run.py
       - ./sendEmail.py:/app/sendEmail.py

@@ -1,11 +1,11 @@
-"""Runs a check at startup, then at each of run.CHECK_TIMES in UK time, whatever the host's TZ.
+"""Runs a check at startup, then at each of draws.CHECK_TIMES in UK time, whatever the host's TZ.
 A check that asks for a retry (an unsent win, or a still-open draw it couldn't fetch) is
 followed by a lighter retry check RETRY_AFTER later, unless a normal check is due sooner."""
 from datetime import datetime, timedelta, timezone
 from time import sleep
 import traceback
-from draws import UK
-from run import CHECK_TIMES, CHECK_TIMES_TEXT, main
+from draws import CHECK_TIMES, CHECK_TIMES_TEXT, UK
+from run import main
 
 RETRY_AFTER = timedelta(minutes=5)
 

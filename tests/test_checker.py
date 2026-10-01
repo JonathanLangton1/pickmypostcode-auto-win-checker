@@ -11,6 +11,7 @@ from contextlib import redirect_stdout
 from datetime import date, timedelta
 from unittest import mock
 
+import healthCheck
 import run
 import scheduler
 from draws import DRAWS, DrawResult
@@ -434,9 +435,12 @@ class HealthCheckTest(CheckerTest):
         output = io.StringIO()
         clock = FakeClock(uk(2026, 10, 1, 14, 0))
         with mock.patch('requests.get', return_value=selenium), \
-                mock.patch.object(run, '_utcNow', clock.now), redirect_stdout(output):
+                mock.patch.object(healthCheck, '_utcNow', clock.now), \
+                mock.patch.object(healthCheck, 'sendEmail', side_effect=self._send), \
+                mock.patch.object(healthCheck, 'fetchDraws', side_effect=self._fetch), \
+                mock.patch.object(healthCheck, 'browserLogin', self.browser), redirect_stdout(output):
             try:
-                run.runTestCheck()
+                healthCheck.runTestCheck()
                 code = 0
             except SystemExit as exit:
                 code = exit.code

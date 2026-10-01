@@ -9,13 +9,18 @@ UK = ZoneInfo('Europe/London')
 API_URL = 'https://pickmypostcode.com/api/index.php/entry/'
 NOON = time(12)
 
+# UK times the bot checks: a minute after each first-come draw (Stackpot 9am, Mini Draw 6pm,
+# Stackpot 9pm), plus the original 2pm run that also signs in for the daily bonus.
+CHECK_TIMES = (time(9, 1), time(14, 0), time(18, 1), time(21, 1))
+CHECK_TIMES_TEXT = f"{', '.join(t.strftime('%H:%M') for t in CHECK_TIMES[:-1])} and {CHECK_TIMES[-1]:%H:%M} UK time"
+
 
 @dataclass(frozen=True)
 class Draw:
     """One scheduled daily draw. The Stackpot is drawn twice a day, so it appears twice."""
     key: str                 # history key
     label: str
-    path: tuple              # location in the API's drawResults
+    path: tuple[str, ...]    # location in the API's drawResults
     at: time                 # UK draw time
     closes: time             # claims close at the next occurrence of this UK time
     firstCome: bool = False  # only the first registered user at the postcode to claim wins
@@ -50,7 +55,7 @@ DRAWS = (
 class DrawResult:
     draw: Draw
     day: date                # UK date the draw was made
-    winningPostcode: object  # str, or a tuple of postcodes for the Stackpot
+    winningPostcode: str | tuple[str, ...]  # a tuple of postcodes for the Stackpot
     hasWon: bool
     claimed: bool = False    # a first-come prize at your postcode has already been taken
 
@@ -62,6 +67,14 @@ class DrawResult:
         if isinstance(self.winningPostcode, tuple):
             return ', '.join(self.winningPostcode) or '—'
         return self.winningPostcode
+
+
+def drawnText(draw, day):
+    return draw.drawnAt(day).strftime('%a %d %b %H:%M')
+
+
+def missingText(missing):
+    return ', '.join(f"{draw.label} ({drawnText(draw, day)})" for draw, day in missing)
 
 
 def fetchDraws(attempts=3, sleep=sleep):
