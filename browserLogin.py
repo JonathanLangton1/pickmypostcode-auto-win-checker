@@ -4,8 +4,6 @@ from selenium.webdriver.common.by import By
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import os
-import json
-from datetime import date
 import time
 
 def browserLogin():
@@ -85,14 +83,6 @@ def browserLogin():
     finally:
         print('Closing browser')
         driver.quit()
-
-    # Update database with the current date of login
-    with open(f'{script_dir}/logs/pastData.json') as f:
-        pastData = json.load(f)
-        pastData['lastBrowserLogin'] = str(date.today())
-
-    with open(f'{script_dir}/logs/pastData.json', 'w') as f:
-        json.dump(pastData, f, indent=2)
 
 if __name__ == "__main__":
     browserLogin()

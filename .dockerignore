@@ -21,6 +21,11 @@ docker-compose.yml
 .gitignore
 
 .github
+tests/
+
+# Never bake live history into the image
+logs/
+pickmypostcode_logs/
 
 # Ignore IDE/editor specific files
 .vscode/

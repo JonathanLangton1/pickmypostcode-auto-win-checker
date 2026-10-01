@@ -16,7 +16,8 @@ services:
       - HEADLESS=false
     volumes:
       - ./browserLogin.py:/app/browserLogin.py
-      - ./checkResults.py:/app/checkResults.py
+      - ./draws.py:/app/draws.py
+      - ./history.py:/app/history.py
       - ./run.py:/app/run.py
       - ./sendEmail.py:/app/sendEmail.py
       - ./summariseWeeklyResults.py:/app/summariseWeeklyResults.py
