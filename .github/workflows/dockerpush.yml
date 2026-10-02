@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  pull_request:
 
 jobs:
   test:
@@ -27,6 +28,7 @@ jobs:
   push_to_registry:
     name: Push multi-arch Docker image to Docker Hub
     needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
@@ -51,6 +53,9 @@ jobs:
           images: jonathanlangton1/pickmypostcode-auto-win-checker
           tags: |
             type=raw,value=latest
+            type=raw,value=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -67,5 +72,5 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           repository: jonathanlangton1/pickmypostcode-auto-win-checker
-          short-description: "Automatically signs into pickmypostcode.com daily and emails when your postcode wins"
+          short-description: "Checks pickmypostcode.com daily and emails when your postcode wins"
           readme-filepath: ./README.md

@@ -1,4 +1,3 @@
-import functools
 import io
 import json
 import os
@@ -9,19 +8,19 @@ import sys
 import tempfile
 import threading
 import unittest
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from datetime import date, datetime, timedelta
 from unittest import mock
 
-import browserLogin
 import healthCheck
 import history
 import run
 import scheduler
-from draws import DRAWS, DrawResult
+from accountCheck import AccountCheckError, AccountCheckResult, creditDay
+from draws import DRAWS, DrawResult, UK
 from history import History, openHistory
 from summariseWeeklyResults import summariseWeeklyResults
-from tests.support import POSTCODE, FakeClock, drawResults, latestResults, stalledSeleniumServer, uk
+from tests.support import POSTCODE, FakeClock, drawResults, latestResults, uk
 
 WIN = 'You have won the postcode lottery 🎉'
 WEEKLY = 'Weekly postcode lottery data summary 📊'
@@ -35,7 +34,7 @@ class Stop(BaseException):
 
 
 class CheckerTest(unittest.TestCase):
-    """Runs run.main() against a fake API, browser and mailbox, with a temporary logs directory."""
+    """Runs run.main() against a fake results API, account check and mailbox, with temporary logs."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -45,18 +44,23 @@ class CheckerTest(unittest.TestCase):
         self.deliver = True
         self.payloads = []
         self.fetches = 0
-        self.browser = mock.Mock()
+        self.account = mock.Mock(side_effect=self._accountResult)
+        run._errorSentFor = None  # process-local error throttle must not leak between tests
         for patcher in (
             mock.patch.object(run, 'LOGS_DIR', self.logs),
             mock.patch.object(run, 'sendEmail', side_effect=self._send),
             mock.patch.object(run, 'fetchDraws', side_effect=self._fetch),
-            mock.patch.object(run, 'browserLogin', self.browser),
+            mock.patch.object(run, 'dailyAccountCheck', self.account),
             mock.patch.dict(os.environ, {'YOUR_POSTCODE': POSTCODE, 'NOTIFICATION_EMAIL_ADDRESS': 'me@example.com'}),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def _send(self, to, subject, message, html_message, attachment_path=None):
+    def _accountResult(self, now=None):
+        moment = now() if now else datetime.now(UK)
+        return AccountCheckResult(total_bonus=100, new_credits=0, verified_day=creditDay(moment))
+
+    def _send(self, to, subject, message, html_message):
         self.emails.append({'subject': subject, 'text': message, 'html': html_message})
         return self.deliver(subject) if callable(self.deliver) else self.deliver
 
@@ -279,49 +283,104 @@ class SchedulerRetryTest(CheckerTest):
         self.assertEqual((third, thirdRetry), (uk(2026, 10, 2, 9, 1), False))  # back to the normal schedule
         self.assertEqual(len(self.sent(WIN)), run.EMAIL_ATTEMPTS + 1)  # three failures, one delivery
         self.assertEqual(self.entry('2026-10-01', 'miniDraw')['notified'], second.isoformat())
-        self.assertEqual(self.browser.call_count, 1)  # retries don't sign in again
+        self.assertEqual(self.account.call_count, 1)  # retries don't check the account again
 
 
-class BrowserTest(CheckerTest):
-    def test_sign_in_runs_once_a_day_from_2pm_on_scheduled_checks(self):
+class AccountScheduleTest(CheckerTest):
+    def test_account_check_runs_once_a_credit_day_from_2pm_on_scheduled_checks(self):
         self.check(uk(2026, 10, 1, 9, 1))
-        self.browser.assert_not_called()
+        self.account.assert_not_called()
         self.check(uk(2026, 10, 1, 14, 0))
         self.check(uk(2026, 10, 1, 18, 1))
-        self.assertEqual(self.browser.call_count, 1)
-        self.assertEqual(self.state()['lastBrowserLogin'], '2026-10-01')
-        self.check(uk(2026, 10, 2, 10, 0), scheduled=False)  # a manual run always signs in
-        self.assertEqual(self.browser.call_count, 2)
+        self.assertEqual(self.account.call_count, 1)
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
+        self.check(uk(2026, 10, 2, 10, 0), scheduled=False)  # a manual run always checks
+        self.assertEqual(self.account.call_count, 2)
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')  # still the previous noon
+        self.check(uk(2026, 10, 2, 14, 0))  # that morning run must not suppress today's credit
+        self.assertEqual(self.account.call_count, 3)
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-02')
         self.assertEqual(self.sent(ERROR), [])
 
-    def test_sign_in_failure_does_not_block_alerts_and_emails_one_error_a_day(self):
+    def test_noon_starts_the_credit_day_a_manual_run_records(self):
+        self.check(uk(2026, 10, 2, 11, 59), scheduled=False)
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
+        self.check(uk(2026, 10, 2, 12, 0), scheduled=False)
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-02')
+
+    def test_account_failure_does_not_block_alerts_and_emails_one_error_a_day(self):
         afternoon = uk(2026, 10, 1, 14, 0)
-        self.browser.side_effect = RuntimeError('sign-in button missing')
+        self.account.side_effect = AccountCheckError('sign-in failed')
         self.check(afternoon, latestResults(afternoon, main=POSTCODE))
         self.assertEqual(len(self.sent(WIN)), 1)
         self.assertEqual(len(self.sent(ERROR)), 1)
-        self.assertIn('sign-in button missing', self.sent(ERROR)[0]['text'])
-        self.assertIsNone(self.state()['lastBrowserLogin'])
+        self.assertIn('sign-in failed', self.sent(ERROR)[0]['text'])
+        self.assertIsNone(self.state()['lastAccountCheck'])
 
         self.check(uk(2026, 10, 1, 18, 1))  # retried later the same day, without another error email
-        self.assertEqual(self.browser.call_count, 2)
+        self.assertEqual(self.account.call_count, 2)
         self.assertEqual(self.sent(ERROR), [])
         self.check(uk(2026, 10, 2, 14, 0))
         self.assertEqual(len(self.sent(ERROR)), 1)
 
-    def test_stalled_selenium_server_is_cut_off_and_later_checks_still_run(self):
+    def test_account_timeout_does_not_record_the_day_and_later_checks_still_run(self):
         afternoon = uk(2026, 10, 1, 14, 0)
-        with stalledSeleniumServer() as (_, url), mock.patch.dict(os.environ, {'SELENIUM_URL': url}), \
-                mock.patch.object(run, 'browserLogin', functools.partial(browserLogin.browserLogin, time_limit=2)):
-            self.check(afternoon, latestResults(afternoon, main=POSTCODE))
+        self.account.side_effect = AccountCheckError('account API timed out')
+        self.check(afternoon, latestResults(afternoon, main=POSTCODE))
         self.assertEqual(len(self.sent(WIN)), 1)
         [error] = self.sent(ERROR)
-        self.assertIn('The browser was stopped after 2 seconds', error['text'])
-        self.assertIsNone(self.state()['lastBrowserLogin'])
+        self.assertIn('account API timed out', error['text'])
+        self.assertIsNone(self.state()['lastAccountCheck'])
 
-        self.check(uk(2026, 10, 1, 18, 1))  # the next check runs, and signs in again
-        self.browser.assert_called_once()
-        self.assertEqual(self.state()['lastBrowserLogin'], '2026-10-01')
+        self.account.side_effect = self._accountResult
+        self.check(uk(2026, 10, 1, 18, 1))
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
+
+    def test_two_history_failures_send_one_accepted_error_email(self):
+        afternoon = uk(2026, 10, 1, 14, 0)
+        clock = FakeClock(afternoon)
+        with mock.patch.object(run, 'openHistory', side_effect=PermissionError('logs')), \
+                redirect_stdout(io.StringIO()):
+            run.main(scheduled=True, now=clock.now, sleep=clock.sleep)
+            run.main(scheduled=True, now=clock.now, sleep=clock.sleep)
+        self.assertEqual(len(self.sent(ERROR)), 1)
+
+    def test_a_save_failure_after_an_accepted_error_email_does_not_send_another(self):
+        afternoon = uk(2026, 10, 1, 14, 0)
+        self.account.side_effect = AccountCheckError('sign-in failed')
+        self.payloads = [latestResults(afternoon)]
+        real_save = history.History.save
+
+        def save(record):
+            if getattr(record, 'fail_close', False):
+                raise PermissionError('full')
+            real_save(record)
+
+        @contextmanager
+        def open_then_fail_close(path, postcode):
+            with history.openHistory(path, postcode) as record:
+                yield record
+                record.fail_close = True  # the context manager's own save is the one that fails
+
+        with mock.patch.object(history.History, 'save', save), \
+                mock.patch.object(run, 'openHistory', open_then_fail_close), \
+                redirect_stdout(io.StringIO()):
+            run.main(scheduled=True, now=lambda: afternoon, sleep=lambda _seconds: None)
+            run.main(scheduled=True, now=lambda: afternoon, sleep=lambda _seconds: None)
+        self.assertEqual(len(self.sent(ERROR)), 1)
+        self.assertIn('sign-in failed', self.sent(ERROR)[0]['text'])
+        self.assertNotIn('The check failed', self.sent(ERROR)[0]['text'])
+
+    def test_a_saved_error_receipt_suppresses_a_later_save_failure(self):
+        os.makedirs(self.logs)
+        with open(os.path.join(self.logs, 'pastData.json'), 'w') as stored:
+            json.dump({'version': 2, 'postcode': 'ZZ99ZZ', 'lastErrorEmail': '2026-10-01', 'draws': {}}, stored)
+        afternoon = uk(2026, 10, 1, 18, 1)
+        self.payloads = [latestResults(afternoon)]
+        with mock.patch.object(history.History, 'save', side_effect=PermissionError('full')), \
+                redirect_stdout(io.StringIO()):
+            run.main(scheduled=True, now=lambda: afternoon, sleep=lambda _seconds: None)
+        self.assertEqual(self.sent(ERROR), [])
 
     def test_unreadable_draw_is_reported(self):
         morning = uk(2026, 10, 1, 9, 1)
@@ -356,8 +415,8 @@ class WeeklySummaryTest(CheckerTest):
         self.assertEqual(self.sent(WEEKLY), [])
 
     def test_waits_for_results_fetched_after_9pm_not_a_check_that_merely_ends_after_it(self):
-        self.browser.side_effect = lambda: self.clock.sleep(240)
-        self.check(uk(2026, 10, 4, 20, 59))  # results fetched at 20:59; the sign-in finishes at 21:03
+        self.account.side_effect = lambda now=None: self.clock.sleep(240) or self._accountResult(now)
+        self.check(uk(2026, 10, 4, 20, 59))  # results fetched at 20:59; the account check finishes at 21:03
         self.assertEqual(self.clock.now(), uk(2026, 10, 4, 21, 3))
         self.assertEqual(self.sent(WEEKLY), [])
         self.assertIsNone(self.state()['lastWeeklySummary'])
@@ -367,7 +426,7 @@ class WeeklySummaryTest(CheckerTest):
         [weekly] = self.sent(WEEKLY)
         self.assertIn('Stackpot 9pm: No (SE1 1AA)', weekly['text'])
         self.assertIn('Sunday, 2026-10-04', weekly['text'])
-        self.assertEqual(self.browser.call_count, 1)
+        self.assertEqual(self.account.call_count, 1)
 
     def test_failed_summary_is_retried_at_the_next_check(self):
         self.deliver = lambda subject: subject != WEEKLY
@@ -430,7 +489,9 @@ class HistoryFileTest(CheckerTest):
         state = self.state()
         self.assertEqual(state['version'], 2)
         self.assertEqual(state['postcode'], 'ZZ99ZZ')
-        self.assertEqual(state['lastBrowserLogin'], '2026-10-01')
+        self.assertEqual(state['lastAccountCheck'], '2026-10-01')
+        self.assertNotIn('lastBrowserLogin', state)
+        self.account.assert_not_called()  # the migrated day already covers this noon-to-noon period
         self.assertEqual(state['draws']['2026-09-29']['miniDraw']['winningPostcode'], POSTCODE)  # 2pm saw last night's
         self.assertTrue(state['draws']['2026-09-29']['miniDraw']['hasWon'])
         self.assertEqual(state['draws']['2026-09-30']['stackpotDraw']['winningPostcode'], ['SA1 1AA', 'SB1 1BB'])
@@ -456,6 +517,54 @@ class HistoryFileTest(CheckerTest):
         self.check(uk(2026, 10, 2, 9, 1), latestResults(night, main=POSTCODE), scheduled=False)
         self.assertEqual(self.sent(WIN), [])
 
+    def test_legacy_receipt_migrates_without_dropping_a_win_receipt(self):
+        notified = '2026-10-01T14:05:00+01:00'
+        self.write({'version': 2, 'postcode': 'ZZ99ZZ', 'lastBrowserLogin': '2026-10-01', 'draws': {'2026-10-01': {
+            'mainDraw': {'winningPostcode': POSTCODE, 'hasWon': True, 'claimed': False, 'notified': notified}}}})
+        self.check(uk(2026, 10, 1, 18, 1), latestResults(uk(2026, 10, 1, 18, 1), main=POSTCODE))
+        state = self.state()
+        self.assertEqual(state['lastAccountCheck'], '2026-10-01')
+        self.assertNotIn('lastBrowserLogin', state)
+        self.assertEqual(state['draws']['2026-10-01']['mainDraw']['notified'], notified)
+        self.account.assert_not_called()
+        self.assertEqual(self.sent(WIN), [])
+
+    def test_new_receipt_wins_when_both_names_are_present(self):
+        self.write({'version': 2, 'postcode': 'ZZ99ZZ', 'draws': {},
+                    'lastAccountCheck': '2026-09-30', 'lastBrowserLogin': '2026-10-01'})
+        self.check(uk(2026, 10, 1, 14, 0))
+        self.account.assert_called_once()
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
+        self.assertNotIn('lastBrowserLogin', self.state())
+
+        self.account.reset_mock()
+        self.write({'version': 2, 'postcode': 'ZZ99ZZ', 'draws': {},
+                    'lastAccountCheck': '2026-10-01', 'lastBrowserLogin': '2026-09-30'})
+        self.check(uk(2026, 10, 1, 18, 1))
+        self.account.assert_not_called()
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
+
+    def test_a_bad_old_receipt_is_ignored_when_the_new_receipt_is_present(self):
+        notified = '2026-10-01T14:05:00+01:00'
+        win = {'winningPostcode': POSTCODE, 'hasWon': True, 'claimed': False, 'notified': notified}
+        self.write({'version': 2, 'postcode': 'ZZ99ZZ', 'lastAccountCheck': '2026-10-01',
+                    'lastBrowserLogin': 'yesterday', 'draws': {'2026-10-01': {'mainDraw': win}}})
+        self.check(uk(2026, 10, 1, 18, 1), latestResults(uk(2026, 10, 1, 18, 1), main=POSTCODE))
+        state = self.state()
+        self.assertEqual(self.setAside('pastData.json.corrupt-'), [])
+        self.assertEqual(state['lastAccountCheck'], '2026-10-01')
+        self.assertNotIn('lastBrowserLogin', state)
+        self.assertEqual(state['draws']['2026-10-01']['mainDraw']['notified'], notified)
+        self.assertEqual(self.sent(WIN), [])
+        self.account.assert_not_called()
+
+        self.write({'version': 2, 'postcode': 'ZZ99ZZ', 'lastAccountCheck': None,
+                    'lastBrowserLogin': 'yesterday', 'draws': {'2026-09-30': {'mainDraw': win}}})
+        self.check(uk(2026, 10, 1, 14, 0))
+        self.assertEqual(self.setAside('pastData.json.corrupt-'), [])
+        self.assertEqual(self.state()['draws']['2026-09-30']['mainDraw']['notified'], notified)
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
+
     def test_corrupt_history_is_set_aside_and_checks_continue(self):
         self.write('{"version": 2, "draws": {')
         afternoon = uk(2026, 10, 1, 14, 0)
@@ -476,7 +585,8 @@ class HistoryFileTest(CheckerTest):
             'a day that is not an object': {**valid, 'draws': {'2026-09-30': []}},
             'an incomplete entry': {**valid, 'draws': {'2026-09-30': {'mainDraw': {'winningPostcode': 'AA1 1AA'}}}},
             'a bad postcode': {**valid, 'draws': {'2026-09-30': {'mainDraw': {**entry, 'winningPostcode': 7}}}},
-            'a bad receipt': {**valid, 'lastBrowserLogin': 'yesterday'},
+            'a bad legacy receipt': {**valid, 'lastBrowserLogin': 'yesterday'},
+            'a bad account receipt': {**valid, 'lastAccountCheck': 'yesterday'},
         }
         afternoon = uk(2026, 10, 1, 14, 0)
         for name, data in cases.items():
@@ -559,8 +669,8 @@ class HistoryFileTest(CheckerTest):
         self.assertEqual(self.sent(ERROR), [])
         self.assertIsNone(self.entry('2026-09-30', 'mainDraw'))
         self.assertEqual(self.entry('2026-09-30', 'surveyDraw')['winningPostcode'], 'XX1 1XX')
-        self.browser.assert_called_once()  # the unreadable sign-in receipt was dropped
-        self.assertEqual(self.state()['lastBrowserLogin'], '2026-10-01')
+        self.account.assert_called_once()  # the unreadable sign-in receipt was dropped
+        self.assertEqual(self.state()['lastAccountCheck'], '2026-10-01')
 
     def test_changing_postcode_sets_the_old_history_aside(self):
         morning = uk(2026, 10, 1, 9, 1)
@@ -612,23 +722,26 @@ class HistoryFileTest(CheckerTest):
 
 
 class HealthCheckTest(CheckerTest):
-    def healthCheck(self, payload, start=uk(2026, 10, 1, 14, 0), browserSeconds=0, emailSeconds=0):
+    def healthCheck(self, payload, start=uk(2026, 10, 1, 14, 0), accountSeconds=0, emailSeconds=0,
+                    account_error=None):
         self.payloads = [payload]
-        selenium = mock.Mock()
-        selenium.json.return_value = {'value': {'ready': True}}
         output = io.StringIO()
         clock = FakeClock(start)
-        self.browser.side_effect = lambda: clock.sleep(browserSeconds)
+
+        def account(now=None):
+            clock.sleep(accountSeconds)
+            if account_error:
+                raise account_error
+            return AccountCheckResult(total_bonus=100, new_credits=0, verified_day=creditDay(clock.now()))
 
         def slowSend(*args, **kwargs):
             clock.sleep(emailSeconds)
             return self._send(*args, **kwargs)
 
-        with mock.patch('requests.get', return_value=selenium), \
-                mock.patch.object(healthCheck, '_utcNow', clock.now), \
+        with mock.patch.object(healthCheck, '_utcNow', clock.now), \
                 mock.patch.object(healthCheck, 'sendEmail', side_effect=slowSend), \
                 mock.patch.object(healthCheck, 'fetchDraws', side_effect=self._fetch), \
-                mock.patch.object(healthCheck, 'browserLogin', self.browser), redirect_stdout(output):
+                mock.patch.object(healthCheck, 'dailyAccountCheck', account), redirect_stdout(output):
             try:
                 healthCheck.runTestCheck()
                 code = 0
@@ -667,10 +780,10 @@ class HealthCheckTest(CheckerTest):
         self.assertNotIn('working perfectly', summary['text'])
         self.assertIn('unavailable: Main Draw (Thu 01 Oct 12:00)', summary['text'])
 
-    def test_a_slow_browser_run_past_2am_does_not_report_a_closed_mini_as_claimable(self):
+    def test_a_slow_account_check_past_2am_does_not_report_a_closed_mini_as_claimable(self):
         code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-09-30 18:00:00',
                                                     midday='2026-09-30 12:00:00', stackpotAt='2026-09-30 21:00:00'),
-                                        start=uk(2026, 10, 1, 1, 59), browserSeconds=180)
+                                        start=uk(2026, 10, 1, 1, 59), accountSeconds=180)
         self.assertEqual(code, 0)
         [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
         self.assertNotIn('You won', summary['text'])
@@ -679,9 +792,9 @@ class HealthCheckTest(CheckerTest):
         self.assertIn('won · closed', output)
         self.assertNotIn('JACKPOT', output)
 
-    def test_a_slow_browser_run_past_6pm_accepts_the_newly_published_mini(self):
+    def test_a_slow_account_check_past_6pm_accepts_the_newly_published_mini(self):
         code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-10-01 18:00:00'),
-                                        start=uk(2026, 10, 1, 17, 59), browserSeconds=180)
+                                        start=uk(2026, 10, 1, 17, 59), accountSeconds=180)
         self.assertEqual(code, 0)
         self.assertNotIn('unavailable', output)
         [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
@@ -696,6 +809,18 @@ class HealthCheckTest(CheckerTest):
         self.assertIn('You won the Mini Draw', summary['text'])  # still claimable when it was written
         self.assertIn('won · closed', output)
         self.assertNotIn('JACKPOT', output)
+
+    def test_account_failure_exits_nonzero_after_the_other_checks(self):
+        code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-09-30 18:00:00'),
+                                        account_error=AccountCheckError('sign-in failed'))
+        self.assertEqual(code, 1)
+        self.assertIn('sign-in failed', output)
+        self.assertIn('Failed checks: account', output)
+        self.assertNotIn('All systems operational', output)
+        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        self.assertNotIn('working perfectly', summary['text'])
+        self.assertNotIn('working perfectly', summary['html'])
+        self.assertIn('account check did not pass', summary['text'])
 
 
 class CommandLineTest(unittest.TestCase):

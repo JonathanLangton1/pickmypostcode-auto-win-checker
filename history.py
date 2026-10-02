@@ -13,7 +13,10 @@ from draws import DRAWS, DrawResult, normalisePostcode
 VERSION = 2
 RETENTION_DAYS = 10
 DRAWS_BY_KEY = {d.key: d for d in DRAWS}
-RECEIPTS = ('lastBrowserLogin', 'lastWeeklySummary', 'lastErrorEmail')
+# lastBrowserLogin is the old browser receipt. It is read so a v1 or v2 file keeps its
+# place in the day, and it is not written. lastAccountCheck is the noon that opened the
+# credited period; when both keys are present, lastAccountCheck wins, including when null.
+RECEIPTS = ('lastAccountCheck', 'lastBrowserLogin', 'lastWeeklySummary', 'lastErrorEmail')
 
 
 @contextmanager
@@ -39,7 +42,7 @@ class History:
         self.path = path
         self.postcode = postcode  # normalised; every result and receipt here is for this postcode
         self.draws = data.get('draws', {})  # {'YYYY-MM-DD' draw day: {draw key: entry}}
-        self.lastBrowserLogin = _date(data.get('lastBrowserLogin'))
+        self.lastAccountCheck = _accountCheckDay(data)
         self.lastWeeklySummary = _date(data.get('lastWeeklySummary'))  # the Sunday it covered
         self.lastErrorEmail = _date(data.get('lastErrorEmail'))
 
@@ -83,7 +86,7 @@ class History:
         data = {
             'version': VERSION,
             'postcode': self.postcode,
-            'lastBrowserLogin': _iso(self.lastBrowserLogin),
+            'lastAccountCheck': _iso(self.lastAccountCheck),
             'lastWeeklySummary': _iso(self.lastWeeklySummary),
             'lastErrorEmail': _iso(self.lastErrorEmail),
             'draws': dict(sorted(self.draws.items())),
@@ -132,12 +135,22 @@ def _startAfresh(path, problem):
     return {}
 
 
+def _accountCheckDay(data):
+    """Prefer the current receipt name. A file that still only has lastBrowserLogin keeps that day."""
+    if 'lastAccountCheck' in data:
+        return _date(data.get('lastAccountCheck'))
+    return _date(data.get('lastBrowserLogin'))
+
+
 def _problem(data):
     """Why version 2 `data` can't be used, checking every value History reads; None if it can."""
     if not isinstance(data.get('postcode'), str):
         return 'no postcode'
     for key in RECEIPTS:
-        if data.get(key) is not None and not _isDay(data[key]):
+        # Once lastAccountCheck is present, even as null, lastBrowserLogin is not the receipt.
+        if key == 'lastBrowserLogin' and 'lastAccountCheck' in data:
+            continue
+        if key in data and data[key] is not None and not _isDay(data[key]):
             return f'{key} is not a date'
     if not isinstance(data.get('draws'), dict):
         return 'draws is not an object'

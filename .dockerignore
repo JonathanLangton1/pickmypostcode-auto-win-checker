@@ -14,7 +14,7 @@ ENV/
 
 # Ignore Docker-related files
 Dockerfile
-docker-compose.yml
+docker-compose*.yml
 
 # Ignore Git files
 .git
@@ -27,6 +27,10 @@ tests/
 logs/
 pickmypostcode_logs/
 
+# Local debug captures
+*screenshot*
+*.har
+
 # Ignore IDE/editor specific files
 .vscode/
 *.swp
@@ -34,6 +38,7 @@ pickmypostcode_logs/
 
 # Ignore sensitive configuration files
 .env
+.env.*
 
 *.md
 *.example

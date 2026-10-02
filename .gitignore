@@ -4,4 +4,5 @@ pastData.json
 logs/
 pickmypostcode_logs/
 .env
+.env.*
 *.log

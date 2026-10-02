@@ -1,13 +1,11 @@
 """`run.py --test`: run the whole pipeline once, report every health check and email a summary."""
-from browserLogin import browserLogin
+from accountCheck import dailyAccountCheck
 from draws import CHECK_TIMES_TEXT, UK, drawnText, fetchDraws, missingText, readDraws
 from datetime import datetime, timezone
 from sendEmail import sendEmail
-import io
 import os
 import random
 import sys
-from contextlib import redirect_stdout
 
 
 LOSING_DAY_QUIPS = [
@@ -34,7 +32,7 @@ def _status(result, now):
     return ''
 
 
-def _buildSummaryHtml(results, missing, postcode, now):
+def _buildSummaryHtml(results, missing, postcode, now, account_ok=True):
     rows = ""
     for result in results:
         status = _status(result, now)
@@ -73,7 +71,7 @@ def _buildSummaryHtml(results, missing, postcode, now):
     else:
         verdict = f"""
         <div style="background:#f5f5f5;border-left:4px solid #bbb;padding:16px 20px;margin:20px 0;border-radius:4px;color:#666;">
-            <p style="margin:0;font-size:15px;">{_noWinText(missing)}</p>
+            <p style="margin:0;font-size:15px;">{_noWinText(missing, account_ok)}</p>
         </div>"""
 
     uk_now = now.astimezone(UK)
@@ -111,13 +109,15 @@ def _buildSummaryHtml(results, missing, postcode, now):
     """
 
 
-def _noWinText(missing):
+def _noWinText(missing, account_ok=True):
     if missing:
         return f"No wins to claim in the results available, but these are unavailable: {missingText(missing)}."
-    return "No wins to claim right now. The bot is working perfectly — try again later!"
+    if not account_ok:
+        return "No wins to claim in these results. The account check did not pass."
+    return "No wins to claim right now."
 
 
-def _buildSummaryText(results, missing, postcode, now):
+def _buildSummaryText(results, missing, postcode, now, account_ok=True):
     lines = [
         "Pick My Postcode — Daily Check",
         now.astimezone(UK).strftime('%A, %d %B %Y'),
@@ -138,13 +138,12 @@ def _buildSummaryText(results, missing, postcode, now):
         lines.append(f"🎉 You won the {', '.join(won)}!")
         lines.append("Claim at https://pickmypostcode.com/")
     else:
-        lines.append(_noWinText(missing))
+        lines.append(_noWinText(missing, account_ok))
     return "\n".join(lines)
 
 
 def runTestCheck():
     """Run the full pipeline once, surface every health check, and email a summary."""
-    import requests
     from rich import box
     from rich.console import Console
     from rich.panel import Panel
@@ -153,7 +152,6 @@ def runTestCheck():
     console = Console(force_terminal=True)
     your_postcode = os.environ.get("YOUR_POSTCODE", "")
     notification_email = os.environ.get("NOTIFICATION_EMAIL_ADDRESS", "")
-    selenium_url = os.environ.get("SELENIUM_URL", "http://selenium-chrome:4444/wd/hub")
     now = _utcNow()
 
     console.print()
@@ -171,39 +169,22 @@ def runTestCheck():
     results = None
     missing = []
 
-    # 1) Selenium grid reachable
+    # 1) Account API: sign in and confirm today's Main, Video and Survey pennies.
     try:
-        status_url = selenium_url.rstrip('/') + '/status'
-        with console.status("  Checking Selenium grid...", spinner="dots"):
-            r = requests.get(status_url, timeout=5)
-        ready = r.json().get('value', {}).get('ready', False)
-        if not ready:
-            raise RuntimeError(f"grid responded but not ready: {r.json()}")
-        console.print("  [green]✓[/green] Selenium grid reachable")
-        checks['selenium'] = True
+        with console.status("  Checking account activity...", spinner="dots"):
+            account = dailyAccountCheck(now=_utcNow)
+        console.print(f"  [green]✓[/green] Account activity verified for {account.verified_day} "
+                      f"({account.new_credits} new, bonus {account.total_bonus}p)")
+        checks['account'] = True
     except Exception as e:
-        console.print(f"  [red]✗[/red] Selenium grid — [red]{e}[/red]")
-        checks['selenium'] = False
+        console.print(f"  [red]✗[/red] Account activity — [red]{e}[/red]")
+        checks['account'] = False
 
-    # 2) Browser flow (login + draw page visits)
-    browser_log = io.StringIO()
-    try:
-        with console.status("  Running browser flow...", spinner="dots"):
-            with redirect_stdout(browser_log):
-                browserLogin()
-        console.print("  [green]✓[/green] Browser flow (sign-in + draw pages)")
-        checks['browser'] = True
-    except Exception as e:
-        console.print(f"  [red]✗[/red] Browser flow — [red]{e}[/red]")
-        if browser_log.getvalue():
-            console.print(f"[dim]{browser_log.getvalue().strip()}[/dim]")
-        checks['browser'] = False
-
-    # 3) Results API fetch
+    # 2) Results API fetch. Read it after the account check: a slow check can cross a draw boundary.
     try:
         with console.status("  Fetching draw results...", spinner="dots"):
             drawResults = fetchDraws()
-            results, missing = readDraws(drawResults, your_postcode, _utcNow())  # the browser may have taken minutes
+            results, missing = readDraws(drawResults, your_postcode, _utcNow())
         if missing:
             console.print(f"  [red]✗[/red] Results API — [red]unavailable: {missingText(missing)}[/red]")
         else:
@@ -213,11 +194,12 @@ def runTestCheck():
         console.print(f"  [red]✗[/red] Results API — [red]{e}[/red]")
         checks['api'] = False
 
-    # 4) Email delivery (only meaningful if we have results to send)
+    # 3) Email. SMTP acceptance is not proof the mailbox stored it.
     if results:
         now = _utcNow()  # whether a win can still be claimed is as of now
-        summary_html = _buildSummaryHtml(results, missing, your_postcode, now)
-        text = _buildSummaryText(results, missing, your_postcode, now)
+        account_ok = checks.get('account') is True
+        summary_html = _buildSummaryHtml(results, missing, your_postcode, now, account_ok)
+        text = _buildSummaryText(results, missing, your_postcode, now, account_ok)
         with console.status(f"  Sending summary email to {notification_email}...", spinner="dots"):
             email_ok = sendEmail(
                 notification_email,
@@ -226,7 +208,8 @@ def runTestCheck():
                 summary_html,
             )
         if email_ok:
-            console.print(f"  [green]✓[/green] Summary email delivered to [bold]{notification_email}[/bold]")
+            # SMTP accepted the message. That is not proof the recipient's mailbox stored it.
+            console.print(f"  [green]✓[/green] Mail server accepted the summary email for [bold]{notification_email}[/bold]")
             checks['email'] = True
         else:
             console.print("  [red]✗[/red] Email — check EMAIL_ADDRESS / EMAIL_PASSWORD in .env")
@@ -282,6 +265,12 @@ def runTestCheck():
         elif missing:
             console.print(Panel(
                 "[yellow]These results are incomplete, so this isn't a confirmed no-win.[/yellow]",
+                border_style="yellow",
+                expand=False,
+            ))
+        elif checks.get('account') is not True:
+            console.print(Panel(
+                "[yellow]No win in these results. The account check did not pass.[/yellow]",
                 border_style="yellow",
                 expand=False,
             ))

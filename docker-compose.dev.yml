@@ -1,26 +1,25 @@
-# Dev overlay: layer on top of docker-compose.yml to run the checker once,
-# non-headless, with the local Python sources bind-mounted for fast iteration.
-# Watch the browser at http://localhost:7900 (password: secret).
+# One local check against the account API, with the Python sources mounted from this directory.
+# There is no browser. Leave the published compose file for the long-running checker.
 #
-# Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm pickmypostcode-checker
+#   docker compose -f docker-compose.dev.yml run --rm --build pickmypostcode-checker
+#   docker compose -f docker-compose.dev.yml run --rm --build pickmypostcode-checker python run.py --test
 
 services:
-  selenium-chrome:
-    ports:
-      - "7900:7900"  # noVNC web viewer
-
   pickmypostcode-checker:
     build: .
+    env_file: .env
     environment:
-      - HEADLESS=false
+      - TZ=Europe/London
     volumes:
-      - ./browserLogin.py:/app/browserLogin.py
+      - ./pickmypostcode_logs:/app/logs
+      - ./accountCheck.py:/app/accountCheck.py
       - ./draws.py:/app/draws.py
       - ./healthCheck.py:/app/healthCheck.py
       - ./history.py:/app/history.py
       - ./run.py:/app/run.py
+      - ./scheduler.py:/app/scheduler.py
       - ./sendEmail.py:/app/sendEmail.py
       - ./summariseWeeklyResults.py:/app/summariseWeeklyResults.py
-    command: python run.py
+    working_dir: /app
+    command: ["python", "run.py"]
     restart: "no"

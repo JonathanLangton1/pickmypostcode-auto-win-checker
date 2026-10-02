@@ -1,22 +1,11 @@
 services:
-  selenium-chrome:
-    image: selenium/standalone-chromium
-    container_name: selenium-chrome
-    ports:
-      - "4444:4444"
-    shm_size: "2gb"
-    restart: always
-
   pickmypostcode-checker:
     image: jonathanlangton1/pickmypostcode-auto-win-checker:latest
     container_name: pickmypostcode-checker
     env_file: .env
     environment:
-      - SELENIUM_URL=http://selenium-chrome:4444/wd/hub
       - TZ=Europe/London
     volumes:
       - ./pickmypostcode_logs:/app/logs
-    depends_on:
-      - selenium-chrome
     working_dir: /app
     restart: on-failure:3

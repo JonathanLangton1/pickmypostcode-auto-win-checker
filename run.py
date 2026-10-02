@@ -1,7 +1,7 @@
 from summariseWeeklyResults import summariseWeeklyResults
+from accountCheck import creditDay, dailyAccountCheck
 from draws import CHECK_TIMES, CHECK_TIMES_TEXT, UK, drawnText, fetchDraws, missingText, readDraws
 from history import openHistory
-from browserLogin import browserLogin
 from datetime import datetime, time, timedelta, timezone
 from sendEmail import sendEmail
 from time import sleep
@@ -13,11 +13,14 @@ import traceback
 
 LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 
-SIGN_IN_FROM = time(14, 0)
+SIGN_IN_FROM = time(14, 0)  # first scheduled account check; the receipt itself is the noon credit day
 PUBLISH_WAIT = timedelta(minutes=15)  # keep re-fetching a draw this long after it's due
 REFETCH_SECONDS = 60
 EMAIL_ATTEMPTS = 3
 EMAIL_RETRY_SECONDS = 30
+# UK date of an error email this process has already had accepted. Used when the history
+# file cannot be read or saved. A restart forgets it; the file is the mark that survives.
+_errorSentFor = None
 
 
 def _utcNow():
@@ -25,26 +28,21 @@ def _utcNow():
 
 
 def main(scheduled=False, retry=False, now=_utcNow, sleep=sleep):
-    """Run one check: record every draw, email new wins, and do the daily sign-in and the Sunday
-    summary when they're due. Manual runs always sign in; retries never do.
+    """Run one check: record every draw, email new wins, and do the daily account check and the
+    Sunday summary when they're due. Manual runs always check the account; retries never do.
     Returns True if retrying soon could still help: a claimable win wasn't emailed, or a draw that's
     still open couldn't be fetched."""
-    screenshot_path = os.path.join(LOGS_DIR, 'error_screenshot.png')
+    history = None
     try:
         with openHistory(os.path.join(LOGS_DIR, 'pastData.json'), os.environ.get("YOUR_POSTCODE", "")) as history:
             errors, retry_soon = _check(history, scheduled, retry, now, sleep)
-            today = now().astimezone(UK).date()
-            if errors and history.lastErrorEmail == today:
-                print('An error email was already sent today; not sending another.')
-            elif errors and _sendErrorEmail(errors, screenshot_path):
-                history.lastErrorEmail = today
+            _reportErrors(history, errors, now)
             return retry_soon
     except Exception:
-        _sendErrorEmail([_logError('The check failed')], screenshot_path)
+        # Opening or saving history failed. history is set once the file was loaded; a
+        # failure before that leaves it None and the process-local mark is all we have.
+        _reportErrors(history, [_logError('The check failed')], now)
         return False
-    finally:
-        if os.path.exists(screenshot_path):
-            os.remove(screenshot_path)
 
 
 def _check(history, scheduled, retry, now, sleep):
@@ -59,13 +57,18 @@ def _check(history, scheduled, retry, now, sleep):
         _sendWins(history, now, sleep)  # still retry wins from earlier checks that can't have been taken
         retry_soon = True
 
-    uk_now = now().astimezone(UK)
-    if not retry and (not scheduled or (history.lastBrowserLogin != uk_now.date() and uk_now.time() >= SIGN_IN_FROM)):
+    checked_at = now()
+    uk_now = checked_at.astimezone(UK)
+    # The receipt is the noon that opened this credit period, so a manual run before noon
+    # does not satisfy the 14:00 check. Nothing is stored unless every draw visit verified.
+    if not retry and (not scheduled or (history.lastAccountCheck != creditDay(uk_now) and uk_now.time() >= SIGN_IN_FROM)):
         try:
-            browserLogin()
-            history.lastBrowserLogin = uk_now.date()
+            result = dailyAccountCheck(now=lambda: checked_at)
+            history.lastAccountCheck = result.verified_day
+            print(f"Account verified for {result.verified_day} "
+                  f"({result.new_credits} new credits, bonus {result.total_bonus}p).")
         except Exception:
-            errors.append(_logError('The browser sign-in failed'))
+            errors.append(_logError('The account check failed'))
 
     if results_at:
         _sendWeeklySummaryIfDue(history, results_at)
@@ -170,23 +173,40 @@ def _sendWeeklySummaryIfDue(history, results_at):
         print("Couldn't send the weekly summary; it will be retried at the next check.")
 
 
+def _reportErrors(history, errors, now):
+    """Send at most one error email per UK day, and only record a send the server accepted.
+
+    The history receipt is used when it is loaded. If this process already had an acceptance
+    that could not be saved, that also counts until the process exits.
+    """
+    global _errorSentFor
+    if not errors:
+        return
+    today = now().astimezone(UK).date()
+    if _errorSentFor == today or (history is not None and history.lastErrorEmail == today):
+        print('An error email was already sent today; not sending another.')
+        return
+    if not _sendErrorEmail(errors):
+        return
+    _errorSentFor = today
+    if history is not None:
+        history.lastErrorEmail = today
+
+
 def _logError(context, trace=True):
     message = f"{context}:\n{traceback.format_exc()}" if trace else f"{context}."
     print(message)
     return message
 
 
-def _sendErrorEmail(errors, screenshot_path):
+def _sendErrorEmail(errors):
     error_message = "\n\n".join(errors)
-    has_screenshot = os.path.exists(screenshot_path)
     return sendEmail(
         os.environ.get("NOTIFICATION_EMAIL_ADDRESS"),
         'Script Error Notification 🚨',
         f'Hey 👋,\n\nAn error occurred while running the script:\n\n{error_message}\n\nPlease check the logs for more details.\n\nThanks,\nRobot',
         f'<p>Hey 👋,<br><br>An error occurred while running the script:<br><pre>{html.escape(error_message)}</pre><br>'
-        f'{"Please check the attached screenshot for more details." if has_screenshot else "Please check the logs for more details."}'
-        f'<br><br>Thanks,<br>Robot</p>',
-        attachment_path=screenshot_path if has_screenshot else None,
+        f'Please check the logs for more details.<br><br>Thanks,<br>Robot</p>',
     )
 
 
@@ -196,7 +216,7 @@ if __name__ == '__main__':
                     f"The scheduler (scheduler.py) runs this at {CHECK_TIMES_TEXT}."
     )
     parser.add_argument('--test', action='store_true',
-                        help='health check: Selenium, browser sign-in, results API and a summary email')
+                        help='health check: account activity, results API and a summary email')
     if parser.parse_args().test:
         from healthCheck import runTestCheck
         runTestCheck()

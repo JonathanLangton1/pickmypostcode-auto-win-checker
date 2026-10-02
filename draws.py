@@ -10,7 +10,7 @@ API_URL = 'https://pickmypostcode.com/api/index.php/entry/'
 NOON = time(12)
 
 # UK times the bot checks: a minute after each first-come draw (Stackpot 9am, Mini Draw 6pm,
-# Stackpot 9pm), plus the original 2pm run that also signs in for the daily bonus.
+# Stackpot 9pm), plus the 2pm run that also records the daily bonus.
 CHECK_TIMES = (time(9, 1), time(14, 0), time(18, 1), time(21, 1))
 CHECK_TIMES_TEXT = f"{', '.join(t.strftime('%H:%M') for t in CHECK_TIMES[:-1])} and {CHECK_TIMES[-1]:%H:%M} UK time"
 
