@@ -1,12 +1,13 @@
 from summariseWeeklyResults import summariseWeeklyResults
 from accountCheck import creditDay, dailyAccountCheck
 from draws import CHECK_TIMES, CHECK_TIMES_TEXT, UK, drawnText, fetchDraws, missingText, readDraws
+from emails import errorEmail, winEmail
+from emailTemplate import render
 from history import openHistory
 from datetime import datetime, time, timedelta, timezone
 from sendEmail import sendEmail
 from time import sleep
 import argparse
-import html
 import os
 import traceback
 
@@ -98,7 +99,7 @@ def _observe(history, now, sleep):
     for result in results:
         history.record(result)
         print(f"{result.draw.label} ({drawnText(result.draw, result.day)}): {result.winningText()}"
-              f"{' — YOUR POSTCODE' if result.hasWon else ''}")
+              f"{' (YOUR POSTCODE)' if result.hasWon else ''}")
     history.save()
     return missing, {(r.draw.key, r.day) for r in results}
 
@@ -115,7 +116,7 @@ def _sendWins(history, now, sleep, observed=frozenset()):
             print("Not sending a first-come win until the results API shows it's still unclaimed.")
         if not wins:
             return
-        win_text, win_html = _winEmail(wins)
+        win_text, win_html = _winEmail(wins, history.postcode, now())
         print('Sending winning email')
         if sendEmail(os.environ.get("NOTIFICATION_EMAIL_ADDRESS"), 'You have won the postcode lottery 🎉', win_text, win_html):
             history.markNotified(wins, now())
@@ -136,8 +137,8 @@ def _reobserve(history, now, sleep):
         return frozenset()
 
 
-def _winEmail(wins):
-    lines = [f"{w.draw.label} (drawn {drawnText(w.draw, w.day)}) — claim before {w.draw.closesAt(w.day):%a %d %b %H:%M}"
+def _winEmail(wins, postcode, now):
+    lines = [f"{w.draw.label} (drawn {drawnText(w.draw, w.day)}), claim before {w.draw.closesAt(w.day):%a %d %b %H:%M}"
              for w in wins]
     first_come = any(w.draw.firstCome for w in wins)
     hurry = "The first person registered at your postcode to claim gets it, so be quick!\n" if first_come else ""
@@ -145,14 +146,7 @@ def _winEmail(wins):
         "Hey 👋,\n\nYou have won the following draw(s):\n" + "\n".join(f"• {line}" for line in lines) +
         f"\n\n{hurry}Claim it here: https://pickmypostcode.com/\n\nThanks,\nRobot"
     )
-    win_html = (
-        "<p>Hey 👋,</p><p>You have won the following draw(s):</p><ul>" +
-        "".join(f"<li><strong>{html.escape(line)}</strong></li>" for line in lines) + "</ul>" +
-        (f"<p>{html.escape(hurry)}</p>" if hurry else "") +
-        "<p>Claim it here: <a href=\"https://pickmypostcode.com/\">pickmypostcode.com</a></p>"
-        "<p>Thanks,<br>Robot</p>"
-    )
-    return win_text, win_html
+    return win_text, render(winEmail(wins, postcode, now))
 
 
 def _sendWeeklySummaryIfDue(history, results_at):
@@ -186,7 +180,7 @@ def _reportErrors(history, errors, now):
     if _errorSentFor == today or (history is not None and history.lastErrorEmail == today):
         print('An error email was already sent today; not sending another.')
         return
-    if not _sendErrorEmail(errors):
+    if not _sendErrorEmail(errors, now()):
         return
     _errorSentFor = today
     if history is not None:
@@ -199,14 +193,13 @@ def _logError(context, trace=True):
     return message
 
 
-def _sendErrorEmail(errors):
+def _sendErrorEmail(errors, now):
     error_message = "\n\n".join(errors)
     return sendEmail(
         os.environ.get("NOTIFICATION_EMAIL_ADDRESS"),
         'Script Error Notification 🚨',
         f'Hey 👋,\n\nAn error occurred while running the script:\n\n{error_message}\n\nPlease check the logs for more details.\n\nThanks,\nRobot',
-        f'<p>Hey 👋,<br><br>An error occurred while running the script:<br><pre>{html.escape(error_message)}</pre><br>'
-        f'Please check the logs for more details.<br><br>Thanks,<br>Robot</p>',
+        render(errorEmail(errors, now)),
     )
 
 

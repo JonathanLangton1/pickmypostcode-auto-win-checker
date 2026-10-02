@@ -2,6 +2,8 @@
 from accountCheck import dailyAccountCheck
 from draws import CHECK_TIMES_TEXT, UK, drawnText, fetchDraws, missingText, readDraws
 from datetime import datetime, timezone
+from emails import healthEmail
+from emailTemplate import render
 from sendEmail import sendEmail
 import os
 import random
@@ -33,80 +35,7 @@ def _status(result, now):
 
 
 def _buildSummaryHtml(results, missing, postcode, now, account_ok=True):
-    rows = ""
-    for result in results:
-        status = _status(result, now)
-        winning_str = result.winningText()
-        if status == 'WIN':
-            result_html = "<span style='color:#2e7d32;font-weight:700;'>🎉 WIN</span>"
-            winning_cell = f"<strong style='color:#2e7d32;'>{winning_str}</strong>"
-        else:
-            result_html = f"<span style='color:#999;'>{status or '—'}</span>"
-            winning_cell = winning_str
-        rows += f"""
-        <tr>
-            <td style="padding:12px 14px;border-bottom:1px solid #eee;font-weight:600;">{result.draw.label}<br><span style="font-weight:400;color:#999;font-size:12px;">{drawnText(result.draw, result.day)}</span></td>
-            <td style="padding:12px 14px;border-bottom:1px solid #eee;color:#555;">{winning_cell}</td>
-            <td style="padding:12px 14px;border-bottom:1px solid #eee;text-align:center;">{result_html}</td>
-        </tr>"""
-    for draw, day in missing:
-        rows += f"""
-        <tr>
-            <td style="padding:12px 14px;border-bottom:1px solid #eee;font-weight:600;">{draw.label}<br><span style="font-weight:400;color:#999;font-size:12px;">{drawnText(draw, day)}</span></td>
-            <td style="padding:12px 14px;border-bottom:1px solid #eee;color:#999;">Unavailable</td>
-            <td style="padding:12px 14px;border-bottom:1px solid #eee;text-align:center;color:#999;">?</td>
-        </tr>"""
-
-    won = [r.draw.label for r in results if r.canClaim(now)]
-    if won:
-        verdict = f"""
-        <div style="background:#e8f5e9;border-left:4px solid #4CAF50;padding:16px 20px;margin:20px 0;border-radius:4px;">
-            <p style="margin:0 0 8px 0;font-size:17px;color:#2e7d32;font-weight:600;">
-                🎉 You won the {', '.join(won)}!
-            </p>
-            <p style="margin:0;">
-                <a href="https://pickmypostcode.com/" style="color:#2e7d32;font-weight:600;text-decoration:none;">Claim now →</a>
-            </p>
-        </div>"""
-    else:
-        verdict = f"""
-        <div style="background:#f5f5f5;border-left:4px solid #bbb;padding:16px 20px;margin:20px 0;border-radius:4px;color:#666;">
-            <p style="margin:0;font-size:15px;">{_noWinText(missing, account_ok)}</p>
-        </div>"""
-
-    uk_now = now.astimezone(UK)
-    return f"""
-    <html>
-    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#333;background:#f4f4f4;padding:24px;margin:0;">
-      <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-        <div style="background:linear-gradient(135deg,#4CAF50,#2e7d32);color:#fff;padding:28px 24px;text-align:center;">
-          <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:0.2px;">Pick My Postcode — Daily Check</h1>
-          <p style="margin:6px 0 0 0;opacity:0.92;font-size:14px;">{uk_now.strftime('%A, %d %B %Y')}</p>
-        </div>
-        <div style="padding:24px;">
-          <p style="margin:0 0 18px 0;font-size:15px;">
-            Hey 👋, here are the latest results for postcode <strong style="color:#1976d2;">{postcode}</strong>:
-          </p>
-          <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <thead>
-              <tr>
-                <th style="padding:10px 14px;background:#fafafa;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:#777;border-bottom:2px solid #eee;">Draw</th>
-                <th style="padding:10px 14px;background:#fafafa;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:#777;border-bottom:2px solid #eee;">Winning Postcode</th>
-                <th style="padding:10px 14px;background:#fafafa;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:#777;border-bottom:2px solid #eee;">Result</th>
-              </tr>
-            </thead>
-            <tbody>{rows}
-            </tbody>
-          </table>
-          {verdict}
-          <p style="margin:20px 0 0 0;font-size:12px;color:#999;">
-            This was a manual <code>--test</code> run. Normally the bot only emails you on wins (plus a weekly summary on Sunday evenings).
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-    """
+    return render(healthEmail(results, missing, postcode, now, lambda r: _status(r, now), _noWinText(missing, account_ok)))
 
 
 def _noWinText(missing, account_ok=True):
@@ -119,7 +48,7 @@ def _noWinText(missing, account_ok=True):
 
 def _buildSummaryText(results, missing, postcode, now, account_ok=True):
     lines = [
-        "Pick My Postcode — Daily Check",
+        "Pick My Postcode daily check",
         now.astimezone(UK).strftime('%A, %d %B %Y'),
         "",
         f"Postcode: {postcode}",
@@ -156,7 +85,7 @@ def runTestCheck():
 
     console.print()
     console.print(Panel(
-        f"[bold]Pick My Postcode — Health Check[/bold]\n"
+        f"[bold]Pick My Postcode health check[/bold]\n"
         f"[dim]{now.astimezone(UK).strftime('%A, %d %B %Y')}[/dim]\n"
         f"Postcode: [bold cyan]{your_postcode or '<not set>'}[/bold cyan]",
         border_style="cyan",
@@ -177,7 +106,7 @@ def runTestCheck():
                       f"({account.new_credits} new, bonus {account.total_bonus}p)")
         checks['account'] = True
     except Exception as e:
-        console.print(f"  [red]✗[/red] Account activity — [red]{e}[/red]")
+        console.print(f"  [red]✗[/red] Account activity: [red]{e}[/red]")
         checks['account'] = False
 
     # 2) Results API fetch. Read it after the account check: a slow check can cross a draw boundary.
@@ -186,12 +115,12 @@ def runTestCheck():
             drawResults = fetchDraws()
             results, missing = readDraws(drawResults, your_postcode, _utcNow())
         if missing:
-            console.print(f"  [red]✗[/red] Results API — [red]unavailable: {missingText(missing)}[/red]")
+            console.print(f"  [red]✗[/red] Results API: [red]unavailable: {missingText(missing)}[/red]")
         else:
             console.print("  [green]✓[/green] Results API fetch")
         checks['api'] = not missing
     except Exception as e:
-        console.print(f"  [red]✗[/red] Results API — [red]{e}[/red]")
+        console.print(f"  [red]✗[/red] Results API: [red]{e}[/red]")
         checks['api'] = False
 
     # 3) Email. SMTP acceptance is not proof the mailbox stored it.
@@ -203,7 +132,7 @@ def runTestCheck():
         with console.status(f"  Sending summary email to {notification_email}...", spinner="dots"):
             email_ok = sendEmail(
                 notification_email,
-                f"Pick My Postcode — {now.astimezone(UK).strftime('%a %d %b')} results",
+                f"Pick My Postcode: {now.astimezone(UK).strftime('%a %d %b')} results",
                 text,
                 summary_html,
             )
@@ -212,17 +141,17 @@ def runTestCheck():
             console.print(f"  [green]✓[/green] Mail server accepted the summary email for [bold]{notification_email}[/bold]")
             checks['email'] = True
         else:
-            console.print("  [red]✗[/red] Email — check EMAIL_ADDRESS / EMAIL_PASSWORD in .env")
+            console.print("  [red]✗[/red] Email: check EMAIL_ADDRESS / EMAIL_PASSWORD in .env")
             checks['email'] = False
     else:
-        console.print("  [yellow]–[/yellow] Email skipped (no results to send)")
+        console.print("  [yellow]-[/yellow] Email skipped (no results to send)")
         checks['email'] = None
 
     # Overall verdict
     console.print()
     all_passed = all(v is True for v in checks.values())
     if all_passed:
-        console.print("[bold green]✅ All systems operational — full pipeline working[/bold green]")
+        console.print("[bold green]✅ All systems operational, full pipeline working[/bold green]")
     else:
         failed = [k for k, v in checks.items() if v is False]
         console.print(f"[bold red]❌ Failed checks: {', '.join(failed)}[/bold red]")
@@ -246,7 +175,7 @@ def runTestCheck():
             if status == 'WIN':
                 table.add_row(result.draw.label, drawn, f"[bold green]{winning_str}[/bold green]", "[bold green]🎉 WIN[/bold green]")
             else:
-                table.add_row(result.draw.label, drawn, winning_str, f"[dim]{status or '–'}[/dim]")
+                table.add_row(result.draw.label, drawn, winning_str, f"[dim]{status or '-'}[/dim]")
         for draw, day in missing:
             table.add_row(draw.label, drawnText(draw, day), "[yellow]unavailable[/yellow]", "[yellow]?[/yellow]")
         console.print(table)
@@ -285,7 +214,7 @@ def runTestCheck():
     # What happens from here (only meaningful if setup is healthy)
     if all_passed:
         console.print(Panel(
-            f"[bold]Sit back and relax[/bold] — the bot checks every draw daily at\n"
+            f"[bold]Sit back and relax.[/bold] The bot checks every draw daily at\n"
             f"[bold]{CHECK_TIMES_TEXT}[/bold].\n\n"
             "You'll automatically get:\n"
             "• A [bold green]winning email[/bold green] (with a claim link) every time your postcode hits,\n"

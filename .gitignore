@@ -6,3 +6,4 @@ pickmypostcode_logs/
 .env
 .env.*
 *.log
+email-previews/

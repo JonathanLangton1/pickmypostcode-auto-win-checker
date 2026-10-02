@@ -7,6 +7,8 @@ pip install -r requirements.txt &&
 python -m unittest
 ```
 
+To see every email the bot sends without sending anything, run `python previewEmails.py` and open the files it writes to `email-previews/`.
+
 Copy [env.example](https://github.com/JonathanLangton1/pickmypostcode-auto-win-checker/blob/main/env.example) to `.env` and edit `.env` with your details. This builds a local image, reads those settings, writes history to `pickmypostcode_logs`, runs one real check and exits. A real check can email new wins.
 
 ```bash

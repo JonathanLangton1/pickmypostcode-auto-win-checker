@@ -42,5 +42,5 @@ def runForever(check, now=lambda: datetime.now(timezone.utc), sleep=sleep):
 
 
 if __name__ == '__main__':
-    print(f"Scheduler started — checking now, then daily at {CHECK_TIMES_TEXT}.", flush=True)
+    print(f"Scheduler started. Checking now, then daily at {CHECK_TIMES_TEXT}.", flush=True)
     runForever(lambda retry: main(scheduled=True, retry=retry))
