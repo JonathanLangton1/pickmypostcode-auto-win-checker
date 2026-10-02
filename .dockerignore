@@ -31,7 +31,8 @@ pmp-setup.py
 logs/
 pickmypostcode_logs/
 
-# Local debug captures
+# Local debug captures and email previews
+email-previews/
 *screenshot*
 *.har
 

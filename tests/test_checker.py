@@ -758,7 +758,7 @@ class HealthCheckTest(CheckerTest):
         self.assertIn('won · closed', output)
         self.assertNotIn('JACKPOT', output)
         self.assertIn('09:01, 14:00, 18:01 and 21:01 UK time', output)
-        self.assertEqual(len(self.sent('Pick My Postcode — Thu 01 Oct results')), 1)
+        self.assertEqual(len(self.sent('Pick My Postcode: Thu 01 Oct results')), 1)
         self.assertFalse(os.path.exists(self.logs))  # the health check doesn't touch history
 
     def test_fails_when_a_draw_cannot_be_read(self):
@@ -776,7 +776,7 @@ class HealthCheckTest(CheckerTest):
         self.assertIn('Failed checks: api', output)
         self.assertIn("incomplete, so this isn't a confirmed no-win", output)
         self.assertNotIn('What happens next', output)
-        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        [summary] = self.sent('Pick My Postcode: Thu 01 Oct results')
         self.assertNotIn('working perfectly', summary['text'])
         self.assertIn('unavailable: Main Draw (Thu 01 Oct 12:00)', summary['text'])
 
@@ -785,9 +785,9 @@ class HealthCheckTest(CheckerTest):
                                                     midday='2026-09-30 12:00:00', stackpotAt='2026-09-30 21:00:00'),
                                         start=uk(2026, 10, 1, 1, 59), accountSeconds=180)
         self.assertEqual(code, 0)
-        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        [summary] = self.sent('Pick My Postcode: Thu 01 Oct results')
         self.assertNotIn('You won', summary['text'])
-        self.assertNotIn('Claim now', summary['html'])
+        self.assertNotIn('Claim your prize', summary['html'])
         self.assertIn('won · closed', summary['text'])
         self.assertIn('won · closed', output)
         self.assertNotIn('JACKPOT', output)
@@ -797,15 +797,16 @@ class HealthCheckTest(CheckerTest):
                                         start=uk(2026, 10, 1, 17, 59), accountSeconds=180)
         self.assertEqual(code, 0)
         self.assertNotIn('unavailable', output)
-        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        [summary] = self.sent('Pick My Postcode: Thu 01 Oct results')
         self.assertIn('You won the Mini Draw', summary['text'])
+        self.assertIn('Claim your prize', summary['html'])
         self.assertIn('JACKPOT', output)
 
     def test_console_results_are_as_of_after_a_slow_email(self):
         code, output = self.healthCheck(drawResults(mini=POSTCODE, miniAt='2026-09-30 18:00:00',
                                                     midday='2026-09-30 12:00:00', stackpotAt='2026-09-30 21:00:00'),
                                         start=uk(2026, 10, 1, 1, 58), emailSeconds=180)
-        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        [summary] = self.sent('Pick My Postcode: Thu 01 Oct results')
         self.assertIn('You won the Mini Draw', summary['text'])  # still claimable when it was written
         self.assertIn('won · closed', output)
         self.assertNotIn('JACKPOT', output)
@@ -817,7 +818,7 @@ class HealthCheckTest(CheckerTest):
         self.assertIn('sign-in failed', output)
         self.assertIn('Failed checks: account', output)
         self.assertNotIn('All systems operational', output)
-        [summary] = self.sent('Pick My Postcode — Thu 01 Oct results')
+        [summary] = self.sent('Pick My Postcode: Thu 01 Oct results')
         self.assertNotIn('working perfectly', summary['text'])
         self.assertNotIn('working perfectly', summary['html'])
         self.assertIn('account check did not pass', summary['text'])

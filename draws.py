@@ -65,7 +65,7 @@ class DrawResult:
 
     def winningText(self):
         if isinstance(self.winningPostcode, tuple):
-            return ', '.join(self.winningPostcode) or '—'
+            return ', '.join(self.winningPostcode) or '-'
         return self.winningPostcode
 
 

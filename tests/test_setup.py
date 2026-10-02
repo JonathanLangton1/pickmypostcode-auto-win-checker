@@ -26,7 +26,7 @@ SPACED_APP_PASSWORD = "abcd efgh ijkl mnop"
 COMPACT_APP_PASSWORD = "abcdefghijklmnop"
 INHERITED_PASSWORD = "inherited-secret"
 SCHEDULER_LOG = (
-    "Scheduler started — checking now, then daily at 09:01, 14:00, 18:01 and 21:01 UK time.\n"
+    "Scheduler started. Checking now, then daily at 09:01, 14:00, 18:01 and 21:01 UK time.\n"
     "Next check at Sat 03 Oct 21:01 BST.\n"
 )
 
