@@ -8,4 +8,4 @@ services:
     volumes:
       - ./pickmypostcode_logs:/app/logs
     working_dir: /app
-    restart: on-failure:3
+    restart: unless-stopped

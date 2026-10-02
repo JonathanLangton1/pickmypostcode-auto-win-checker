@@ -23,6 +23,10 @@ docker-compose*.yml
 .github
 tests/
 
+# Host-only onboarding. The running image does not need it.
+setup.py
+pmp-setup.py
+
 # Never bake live history into the image
 logs/
 pickmypostcode_logs/
